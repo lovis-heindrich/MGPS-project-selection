@@ -14,7 +14,7 @@ class Distribution(object):
     def __add__(self, other):
         raise NotImplementedError()
 
-    def expectation(self):
+    def expectation(self) -> float:
         raise NotImplementedError()
 
     def sample(self, n=None):
@@ -186,7 +186,7 @@ class Categorical(Distribution):
         return Categorical(vals, self.probs)
 
     @lru_cache(LARGE_CACHE_SIZE)
-    def expectation(self):
+    def expectation(self) -> float:
         return sum(p * v for p, v in zip(self.probs, self.vals))
 
     def sample(self, n=None):
