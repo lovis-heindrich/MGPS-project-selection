@@ -99,6 +99,7 @@ class MouselabJas:
     def step(self, action: Action) -> tuple[State, float, bool, float]:
         assert not self.done, "terminal state"
         if action == self.term_action:
+            self.done = True
             reward = self.term_reward()
             done = True
             obs = 0.0
@@ -151,7 +152,7 @@ class MouselabJas:
             [self.ground_truth[list(path)].sum() for path in self.optimal_paths(state)]
         )
         if self.config.sample_term_reward:
-            return float(np.random.sample(returns))
+            return float(np.random.choice(returns))
         else:
             return np.mean(returns)
 
