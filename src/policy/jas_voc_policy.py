@@ -3,6 +3,7 @@ from scipy.stats import norm
 from src.policy.jas_policy import JAS_policy
 from src.utils.data_classes import Action, State
 from src.utils.mouselab_standalone import MouselabJas
+from src.utils.distributions import Normal, expectation
 
 class JAS_voc_policy(JAS_policy):
     def __init__(self) -> None:
@@ -10,10 +11,41 @@ class JAS_voc_policy(JAS_policy):
 
     def act(self, env: MouselabJas) -> Action:
         actions = tuple(env.actions())
-        voc = [self.myopic_voc_normal(env, action) for action in actions]
+        values = [self.myopic_voc_normal(env, action) for action in actions]
+        costs = [env.cost(action) for action in actions]
+        voc = [value + cost for value, cost in zip(values, costs)]
         best_action_indices = np.argwhere(voc == np.max(voc)).flatten()
         chosen_action_index = np.random.choice(best_action_indices)
         return actions[chosen_action_index]
+
+    def get_best_path_action_set(self, env: MouselabJas, action: Action, state: State) -> tuple[float, float]:
+        """ Expected reward of the best path including and excluding the given action.
+
+        Args:
+            action (int): Selected action
+            state (list): Environment state
+
+        Returns:
+            action_path_reward (float): The expected reward of the best path going through the given action
+            alternative_path_reward (float): The expected reward of the best path not going through the given action
+        """
+
+        action_path_reward = -np.inf
+        alternative_path_reward = -np.inf
+        for path in env.all_paths():
+            path_reward = 0
+            action_found = False
+            for node in path:
+                if node == action.query:
+                    action_found = True
+                reward = state[node]
+                path_reward += expectation(reward)
+            if action_found:
+                action_path_reward = max(action_path_reward, path_reward)
+            else:
+                alternative_path_reward = max(alternative_path_reward, path_reward)
+        return action_path_reward, alternative_path_reward
+
 
     def myopic_voc_normal(self, env: MouselabJas, action: Action, state: State| None = None, log=False, eps=1e-8) -> float:
         assert action in tuple(env.actions()), f"Action {action} not legal"
@@ -21,18 +53,20 @@ class JAS_voc_policy(JAS_policy):
             return 0
         if state == None:
             state = env.state
-        assert type(state) == State
-        assert hasattr(state[action], "sigma")
-        action_path_rewards, alternative_path_reward = self.get_best_path_action_set(action, state)
-        action_path_without_node = action_path_reward - state[action].expectation()
+        assert state is not None
+        assert len(state) > action.query
+        assert isinstance(state[action.query], Normal) 
+        action_path_reward, alternative_path_reward = self.get_best_path_action_set(env, action, state)
+        action_path_without_node = action_path_reward - state[action.query].expectation()
         
-        value, sigma = state[action].mu, state[action].sigma
+        tau = env.expert_taus[action.expert]
+        value, sigma = state[action.query].mu, state[action.query].sigma
         tau_old = 1 / (sigma ** 2)
-        tau_new = tau_old + self.tau
-        sample_sigma = 1 / np.sqrt(self.tau)
+        tau_new = tau_old + tau
+        sample_sigma = 1 / np.sqrt(tau)
 
         # Sample threshold that leads to a different optimal path
-        threshold = (((alternative_path_reward - action_path_without_node)*tau_new) - (value * tau_old)) / self.tau
+        threshold = (((alternative_path_reward - action_path_without_node)*tau_new) - (value * tau_old)) / tau
         
         # The path leading through the selected node is optimal
         if action_path_reward > alternative_path_reward:
@@ -41,7 +75,7 @@ class JAS_voc_policy(JAS_policy):
             # Expected sample value given that it is below the threshold
             expected_lower = self.expect_lower(value, np.sqrt(sigma**2+sample_sigma**2), threshold)
             # Update the node distribution with the expected sample
-            updated_node = ((value * tau_old) + self.tau * expected_lower) / tau_new
+            updated_node = ((value * tau_old) + tau * expected_lower) / tau_new
             # Gain = alternative path minus the new node path weighted by probability
             voc = (alternative_path_reward - action_path_without_node - updated_node) * p_being_worse
             if p_being_worse < eps or np.isnan(expected_lower):
@@ -53,7 +87,7 @@ class JAS_voc_policy(JAS_policy):
             # Expected sample value given that it is above the threshold
             expected_higher = self.expect_higher(value, np.sqrt(sigma**2+sample_sigma**2), threshold)
             # Update the node distribution with the expected sample
-            updated_node = ((value * tau_old) + self.tau * expected_higher) / tau_new
+            updated_node = ((value * tau_old) + tau * expected_higher) / tau_new
             # Gain = new node path minus the old path weighted by probability
             voc = (action_path_without_node + updated_node - alternative_path_reward) * p_being_better
             if p_being_better < eps or np.isnan(expected_higher):

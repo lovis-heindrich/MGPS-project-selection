@@ -144,7 +144,54 @@ class TestAction(unittest.TestCase):
         self.assertAlmostEqual(post_var, state[1].sigma**2)
         self.assertAlmostEqual(post_mean, state[1].mu)
         self.assertEqual(state[1], self.env.state[1])
-        
+
+class TestSeed(unittest.TestCase):
+    def setUp(self) -> None:
+        self.expert_costs = [1, 0.5, 2]
+        self.expert_taus = [1, 0.01, 0.01]
+        self.config = MouselabConfig()
+        self.tree = [[1, 2], [], []]
+        self.init = [Normal(0, 1), Normal(0, 20), Normal(0, 20)]
+    
+    def test_random_initialization(self):
+        env1 = MouselabJas(self.tree, self.init, self.expert_costs, self.expert_taus, self.config)
+        env2 = MouselabJas(self.tree, self.init, self.expert_costs, self.expert_taus, self.config)
+        self.assertTrue(np.all(env1.ground_truth[1:] != env2.ground_truth[2:]))
+        self.assertTrue(np.all(env1.expert_truths[:, 1:] != env2.expert_truths[:, 1:]))
+    
+    def test_random_reset(self):
+        env = MouselabJas(self.tree, self.init, self.expert_costs, self.expert_taus, self.config)
+        ground_truth, expert_truths = env.ground_truth, env.expert_truths.copy()
+        env.reset()
+        self.assertTrue(np.all(ground_truth[1:] != env.ground_truth[1:]))
+        self.assertTrue(np.all(expert_truths[:, 1:] != env.expert_truths[:, 1:]))
+    
+    def test_fixed_reset(self):
+        env = MouselabJas(self.tree, self.init, self.expert_costs, self.expert_taus, self.config, seed=1)
+        ground_truth, expert_truths = env.ground_truth, env.expert_truths.copy()
+        env.reset()
+        self.assertTrue(np.all(ground_truth[1:] == env.ground_truth[1:]))
+        self.assertTrue(np.all(expert_truths[:, 1:] == env.expert_truths[:, 1:]))
+
+    def test_seed_initialization(self):
+        env1 = MouselabJas(self.tree, self.init, self.expert_costs, self.expert_taus, self.config, seed=1)
+        env2 = MouselabJas(self.tree, self.init, self.expert_costs, self.expert_taus, self.config, seed=2)
+        env3 = MouselabJas(self.tree, self.init, self.expert_costs, self.expert_taus, self.config, seed=1)
+        self.assertTrue(np.all(env1.ground_truth[1:] == env3.ground_truth[1:]))
+        self.assertTrue(np.all(env1.expert_truths[:, 1:] == env3.expert_truths[:, 1:]))
+        self.assertTrue(np.all(env1.ground_truth[1:] != env2.ground_truth[1:]))
+        self.assertTrue(np.all(env1.expert_truths[:, 1:] != env2.expert_truths[:, 1:]))
+    
+    def test_random_seed_reset(self):
+        env = MouselabJas(self.tree, self.init, self.expert_costs, self.expert_taus, self.config)
+        env.reset(seed=1)
+        ground_truth, expert_truths = env.ground_truth, env.expert_truths.copy()
+        env.reset(seed=2)
+        self.assertTrue(np.all(ground_truth[1:] != env.ground_truth[1:]))
+        self.assertTrue(np.all(expert_truths[:, 1:] != env.expert_truths[:, 1:]))
+        env.reset(seed=1)
+        self.assertTrue(np.all(ground_truth[1:] == env.ground_truth[1:]))
+        self.assertTrue(np.all(expert_truths[:, 1:] == env.expert_truths[:, 1:]))
 
 if __name__ == '__main__':
     unittest.main()

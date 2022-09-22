@@ -18,3 +18,8 @@ class MouselabConfig(NamedTuple):
     term_belief: bool = True
     limit_repeat_clicks: int | None = 1
     max_actions: int | None = 200
+
+class EpisodeResult(NamedTuple):
+    reward: float
+    actions: tuple[Action]
+    seed: int

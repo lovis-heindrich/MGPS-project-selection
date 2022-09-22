@@ -126,7 +126,6 @@ class NormalMixture(Distribution):
     def fit(cls, samples):
         return cls(*scipy.stats.norm.fit(samples))
 
-
 @total_ordering
 class Categorical(Distribution):
     """Categorical distribution."""
@@ -204,7 +203,6 @@ class Categorical(Distribution):
         var = sum([(val-exp)*(val-exp)*prob for val, prob in zip(self.vals, self.probs)])
         return var
 
-
 class PointMass(Categorical):
     """A distribution with all mass on one value."""
     def __init__(self, val):
@@ -233,7 +231,6 @@ class PointMass(Categorical):
     def sample(self, n=None):
         return self.vals[0]
 
-
 class ScipyDistribution(Distribution):
     """Distribution based on a distribution in scipy.stats,"""
     def sample(self, n=None):
@@ -241,7 +238,6 @@ class ScipyDistribution(Distribution):
 
     def expectation(self):
         return self._dist.expect()
-
 
 class Beta(ScipyDistribution):
     """Distribution over [0,1]."""
@@ -258,7 +254,6 @@ class Beta(ScipyDistribution):
             return Beta(self.alpha + 1, self.beta)
         else:
             return Beta(self.alpha, self.beta + 1)
-
 
 class GenerativeModel(Distribution):
     """Distribution represented by a generative model."""
@@ -289,13 +284,19 @@ class GenerativeModel(Distribution):
     def expectation(self, n=10000):
         return self.sample(n).mean()
 
-
 # @lru_cache(maxsize=CACHE_SIZE)
-def expectation(val):
-    try:
-        return val.expectation()
-    except AttributeError:
+def expectation(val: Distribution | float | int) -> float:
+    if isinstance(val, int):
+        return float(val)
+    elif isinstance(val, float):
         return val
+    else:
+        assert isinstance(val, Distribution)
+        return val.expectation()
+    #try:
+    #    return val.expectation()
+    #except AttributeError:
+    #    return val
 
 
 ZERO = PointMass(0)

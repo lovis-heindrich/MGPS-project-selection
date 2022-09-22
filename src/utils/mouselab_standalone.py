@@ -23,6 +23,7 @@ class MouselabJas:
         expert_costs: list[float],
         expert_taus: list[float],
         config: MouselabConfig,
+        seed: None | int = None
     ):
         self.config = config
         self.tree = tree
@@ -37,6 +38,7 @@ class MouselabJas:
 
         self.term_action: Action = Action(self.num_experts, len(self.init))
 
+        self.seed = seed
         self.reset()
 
         assert (
@@ -46,7 +48,12 @@ class MouselabJas:
             expert_taus
         ), "expert precision and cost arrays must be the same length"
 
-    def reset(self) -> State:
+    def reset(self, seed=None) -> State:
+        if self.seed is not None:
+            np.random.seed(self.seed)
+            assert seed is None, "Environment seed already set"
+        elif seed is not None:
+            np.random.seed(seed)
         self.done = False
         self.clicks: list[Action] = []
         self.state: State = self.init
@@ -68,6 +75,8 @@ class MouselabJas:
         return self.state
 
     def cost(self, action: Action) -> float:
+        if action is self.term_action:
+            return 0
         return -abs(self.expert_costs[action.expert])
 
     def get_state(self, state: None | State) -> State:
