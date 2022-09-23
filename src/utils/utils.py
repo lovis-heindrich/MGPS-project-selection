@@ -1,6 +1,6 @@
 import numpy as np
 
-def tau_to_sigma(tau: np.array) -> np.array:
+def tau_to_sigma(tau: np.ndarray) -> np.ndarray:
     """ Converts the precision of a Normal distribution to its standard deviation.
 
     Args:

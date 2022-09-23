@@ -21,5 +21,6 @@ class MouselabConfig(NamedTuple):
 
 class EpisodeResult(NamedTuple):
     reward: float
-    actions: tuple[Action]
+    actions: int
     seed: int
+    runtime: float
