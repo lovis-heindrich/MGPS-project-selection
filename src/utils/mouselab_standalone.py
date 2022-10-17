@@ -5,6 +5,8 @@ from src.utils.utils import tau_to_sigma
 from src.utils.distributions import Distribution, Normal, PointMass, sample, expectation
 import warnings
 
+from src.utils.env_creation import create_tree
+
 NO_CACHE = False
 if NO_CACHE:
     lru_cache = lambda _: (lambda f: f)
@@ -18,7 +20,8 @@ ZERO = PointMass(0)
 class MouselabJas:
     def __init__(
         self,
-        tree: Tree,
+        num_projects: int,
+        num_criterias: int,
         init: State,
         expert_costs: list[float],
         expert_taus: list[float],
@@ -26,7 +29,7 @@ class MouselabJas:
         seed: None | int = None
     ):
         self.config = config
-        self.tree = tree
+        self.tree = create_tree(num_projects, num_criterias)
         self.init = (0, *init[1:])
 
         # Init costs and precision
@@ -34,7 +37,7 @@ class MouselabJas:
         self.expert_taus = np.array(expert_taus)
         self.expert_sigma = tau_to_sigma(self.expert_taus)
         self.expert_costs = expert_costs
-        self.expert_truths = np.zeros(shape=(self.num_experts, len(tree)))
+        self.expert_truths = np.zeros(shape=(self.num_experts, len(self.tree)))
 
         self.term_action: Action = Action(self.num_experts, len(self.init))
 

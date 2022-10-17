@@ -9,19 +9,20 @@ class TestEnvCreation(unittest.TestCase):
         self.expert_costs = [1, 0.5, 2]
         self.expert_taus = [1, 0.01, 0.01]
         self.config = MouselabConfig()
-        self.tree = [[1, 2], [], []]
+        self.num_projects = 2
+        self.num_criteria = 1
         self.init = [Normal(0, 1), Normal(0, 20), Normal(0, 20)]
 
     def test_ground_truth(self):
         ground_truth = np.array([1, 1.5, 2.5])
         config = MouselabConfig(ground_truth=ground_truth)
-        env = MouselabJas(self.tree, self.init, self.expert_costs, self.expert_taus, config)
+        env = MouselabJas(self.num_projects, self.num_criteria, self.init, self.expert_costs, self.expert_taus, config)
         self.assertTrue((env.ground_truth[1:]==ground_truth[1:]).all())
         self.assertEqual(env.ground_truth[0], 0)
 
     def test_random_env(self):
-        env = MouselabJas(self.tree, self.init, self.expert_costs, self.expert_taus, self.config)
-        self.assertEqual(len(self.tree), len(env.ground_truth))
+        env = MouselabJas(self.num_projects, self.num_criteria, self.init, self.expert_costs, self.expert_taus, self.config)
+        self.assertEqual(len(env.tree), len(env.ground_truth))
         self.assertEqual(env.expert_truths.shape, (len(self.expert_costs), len(self.init)))
 
 class TestReward(unittest.TestCase):
@@ -29,19 +30,20 @@ class TestReward(unittest.TestCase):
         self.expert_costs = [1, 0.5, 2]
         self.expert_taus = [1, 0.01, 0.01]
         self.ground_truth = np.array([1, 2.5, 7.5])
-        self.tree = [[1], [2], []]
+        self.num_projects = 1
+        self.num_criteria = 2
         self.init = [Normal(0, 1), Normal(0, 20), Normal(0, 20)]
     
     def test_expected_term_reward(self):
         config = MouselabConfig(ground_truth=self.ground_truth, term_belief=True)
-        env = MouselabJas(self.tree, self.init, self.expert_costs, self.expert_taus, config)
+        env = MouselabJas(self.num_projects, self.num_criteria, self.init, self.expert_costs, self.expert_taus, config)
         self.assertEqual(env.term_reward(), env.term_reward(env.state))
         self.assertEqual(env.term_reward(), 0)
         self.assertEqual(env.term_reward(), env.expected_term_reward(env.state))
     
     def test_expected_term_reward_non_zero(self):
         config = MouselabConfig(ground_truth=self.ground_truth, term_belief=True)
-        env = MouselabJas(self.tree, self.init, self.expert_costs, self.expert_taus, config)
+        env = MouselabJas(self.num_projects, self.num_criteria, self.init, self.expert_costs, self.expert_taus, config)
         env.state[1].mu = 5
         env.state[2].mu = 4
         self.assertEqual(env.term_reward(), env.term_reward(env.state))
@@ -50,24 +52,26 @@ class TestReward(unittest.TestCase):
     
     def test_term_reward(self):
         config = MouselabConfig(ground_truth=self.ground_truth, term_belief=False)
-        env = MouselabJas(self.tree, self.init, self.expert_costs, self.expert_taus, config)
+        env = MouselabJas(self.num_projects, self.num_criteria, self.init, self.expert_costs, self.expert_taus, config)
         self.assertEqual(env.term_reward(), env.term_reward(env.state))
         self.assertEqual(env.term_reward(), 10)
         self.assertEqual(env.expected_term_reward(env.state), 0)
 
     def test_sample_term_reward(self):
         ground_truth = np.array([1, 2.5, 7.5])
-        tree = [[1, 2], [], []]
+        num_projects = 2
+        num_criteria = 1
         config = MouselabConfig(ground_truth=ground_truth, term_belief=False, sample_term_reward=True)
-        env = MouselabJas(tree, self.init, self.expert_costs, self.expert_taus, config)
+        env = MouselabJas(num_projects, num_criteria, self.init, self.expert_costs, self.expert_taus, config)
         self.assertTrue(env.term_reward()==2.5 or env.term_reward()==7.5)
         self.assertEqual(env.expected_term_reward(env.state), 0)
     
     def test_dont_sample_term_reward(self):
         ground_truth = np.array([1, 2.5, 7.5])
-        tree = [[1, 2], [], []]
+        num_projects = 2
+        num_criteria = 1
         config = MouselabConfig(ground_truth=ground_truth, term_belief=False, sample_term_reward=False)
-        env = MouselabJas(tree, self.init, self.expert_costs, self.expert_taus, config)
+        env = MouselabJas(num_projects, num_criteria, self.init, self.expert_costs, self.expert_taus, config)
         self.assertEqual(env.term_reward(), 5)
         self.assertEqual(env.expected_term_reward(env.state), 0)
 
@@ -76,10 +80,11 @@ class TestAction(unittest.TestCase):
         expert_costs = [1, -0.5]
         expert_taus = [2, 4]
         ground_truth = np.array([1, 2.5, 7.5])
-        tree = [[1], [2], []]
+        num_projects = 1
+        num_criteria = 2
         init = [Normal(0, 1), Normal(0, 4), Normal(0, 4)]
         config = MouselabConfig(ground_truth=ground_truth, limit_repeat_clicks=1)
-        self.env = MouselabJas(tree, init, expert_costs, expert_taus, config)
+        self.env = MouselabJas(num_projects, num_criteria, init, expert_costs, expert_taus, config)
         self.env.expert_truths = np.array([[0, 10, -10], [0, 5, -5]])
 
     def test_available_actions(self):
@@ -150,40 +155,41 @@ class TestSeed(unittest.TestCase):
         self.expert_costs = [1, 0.5, 2]
         self.expert_taus = [1, 0.01, 0.01]
         self.config = MouselabConfig()
-        self.tree = [[1, 2], [], []]
+        self.num_projects = 2
+        self.num_criteria = 1
         self.init = [Normal(0, 1), Normal(0, 20), Normal(0, 20)]
     
     def test_random_initialization(self):
-        env1 = MouselabJas(self.tree, self.init, self.expert_costs, self.expert_taus, self.config)
-        env2 = MouselabJas(self.tree, self.init, self.expert_costs, self.expert_taus, self.config)
+        env1 = MouselabJas(self.num_projects, self.num_criteria, self.init, self.expert_costs, self.expert_taus, self.config)
+        env2 = MouselabJas(self.num_projects, self.num_criteria, self.init, self.expert_costs, self.expert_taus, self.config)
         self.assertTrue(np.all(env1.ground_truth[1:] != env2.ground_truth[2:]))
         self.assertTrue(np.all(env1.expert_truths[:, 1:] != env2.expert_truths[:, 1:]))
     
     def test_random_reset(self):
-        env = MouselabJas(self.tree, self.init, self.expert_costs, self.expert_taus, self.config)
+        env = MouselabJas(self.num_projects, self.num_criteria, self.init, self.expert_costs, self.expert_taus, self.config)
         ground_truth, expert_truths = env.ground_truth, env.expert_truths.copy()
         env.reset()
         self.assertTrue(np.all(ground_truth[1:] != env.ground_truth[1:]))
         self.assertTrue(np.all(expert_truths[:, 1:] != env.expert_truths[:, 1:]))
     
     def test_fixed_reset(self):
-        env = MouselabJas(self.tree, self.init, self.expert_costs, self.expert_taus, self.config, seed=1)
+        env = MouselabJas(self.num_projects, self.num_criteria, self.init, self.expert_costs, self.expert_taus, self.config, seed=1)
         ground_truth, expert_truths = env.ground_truth, env.expert_truths.copy()
         env.reset()
         self.assertTrue(np.all(ground_truth[1:] == env.ground_truth[1:]))
         self.assertTrue(np.all(expert_truths[:, 1:] == env.expert_truths[:, 1:]))
 
     def test_seed_initialization(self):
-        env1 = MouselabJas(self.tree, self.init, self.expert_costs, self.expert_taus, self.config, seed=1)
-        env2 = MouselabJas(self.tree, self.init, self.expert_costs, self.expert_taus, self.config, seed=2)
-        env3 = MouselabJas(self.tree, self.init, self.expert_costs, self.expert_taus, self.config, seed=1)
+        env1 = MouselabJas(self.num_projects, self.num_criteria, self.init, self.expert_costs, self.expert_taus, self.config, seed=1)
+        env2 = MouselabJas(self.num_projects, self.num_criteria, self.init, self.expert_costs, self.expert_taus, self.config, seed=2)
+        env3 = MouselabJas(self.num_projects, self.num_criteria, self.init, self.expert_costs, self.expert_taus, self.config, seed=1)
         self.assertTrue(np.all(env1.ground_truth[1:] == env3.ground_truth[1:]))
         self.assertTrue(np.all(env1.expert_truths[:, 1:] == env3.expert_truths[:, 1:]))
         self.assertTrue(np.all(env1.ground_truth[1:] != env2.ground_truth[1:]))
         self.assertTrue(np.all(env1.expert_truths[:, 1:] != env2.expert_truths[:, 1:]))
     
     def test_random_seed_reset(self):
-        env = MouselabJas(self.tree, self.init, self.expert_costs, self.expert_taus, self.config)
+        env = MouselabJas(self.num_projects, self.num_criteria, self.init, self.expert_costs, self.expert_taus, self.config)
         env.reset(seed=1)
         ground_truth, expert_truths = env.ground_truth, env.expert_truths.copy()
         env.reset(seed=2)
