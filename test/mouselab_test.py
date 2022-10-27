@@ -25,6 +25,16 @@ class TestEnvCreation(unittest.TestCase):
         self.assertEqual(len(env.tree), len(env.ground_truth))
         self.assertEqual(env.expert_truths.shape, (len(self.expert_costs), len(self.init)))
 
+    def test_criteria_scale(self):
+        ground_truth = np.array([1, 1.5, 2.5])
+        criteria_scale = [2]
+        config = MouselabConfig(ground_truth=ground_truth)
+        env = MouselabJas(self.num_projects, self.num_criteria, self.init, self.expert_costs, self.expert_taus, config, criteria_scale=criteria_scale)
+        self.assertTrue((env.ground_truth[1:]==2*ground_truth[1:]).all())
+        self.assertEqual(env.ground_truth[0], 0)
+        self.assertEqual(env.init[1].mu, 0)
+        self.assertEqual(env.init[1].sigma, 40)
+
 class TestReward(unittest.TestCase):
     def setUp(self) -> None:
         self.expert_costs = [1, 0.5, 2]

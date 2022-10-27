@@ -1,7 +1,7 @@
 from typing import Generator
 import numpy as np
-from src.utils.data_classes import MouselabConfig, Action, State, Tree
-from src.utils.utils import tau_to_sigma
+from src.utils.data_classes import MouselabConfig, Action, State
+from src.utils.utils import tau_to_sigma, scale_normal
 from src.utils.distributions import Distribution, Normal, PointMass, sample, expectation
 import warnings
 
@@ -26,11 +26,19 @@ class MouselabJas:
         expert_costs: list[float],
         expert_taus: list[float],
         config: MouselabConfig,
+        criteria_scale: None | list[float] = None,
         seed: None | int = None
     ):
         self.config = config
         self.tree = create_tree(num_projects, num_criterias)
-        self.init = (0, *init[1:])
+        self.criteria_scale = criteria_scale
+        self.num_projects = num_projects
+
+        if self.criteria_scale is None:
+            self.init = (0, *init[1:])
+        else:
+            tmp_scale: list[float] = self.criteria_scale * self.num_projects
+            self.init = (0, *[scale_normal(scale, node) for scale, node in zip(tmp_scale, init[1:])])
 
         # Init costs and precision
         self.num_experts = len(expert_costs)
@@ -65,6 +73,8 @@ class MouselabJas:
             self.ground_truth[0] = 0.0
         else:
             self.ground_truth = np.array(self.config.ground_truth)
+            if self.criteria_scale is not None:
+                self.ground_truth[1:] = self.ground_truth[1:] * np.array(self.criteria_scale * self.num_projects)
             if self.ground_truth[0] != 0:
                 warnings.warn("ground_truth[0] will be set to 0", UserWarning)
             self.ground_truth[0] = 0.0

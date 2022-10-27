@@ -3,14 +3,12 @@ import numpy.typing as npt
 import numpy as np
 from src.utils.distributions import Distribution
 
-
 State = tuple[int | float | Distribution, ...]
 Tree = list[list[int]]
 
 class Action(NamedTuple):
     expert: int
     query: int
-
 
 class MouselabConfig(NamedTuple):
     ground_truth: npt.NDArray[np.float64] | None = None
