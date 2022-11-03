@@ -1,4 +1,4 @@
-from src.utils.mouselab_standalone import MouselabJas
+from src.utils.mouselab_jas import MouselabJas
 from src.utils.data_classes import MouselabConfig
 from src.utils.distributions import Normal
 

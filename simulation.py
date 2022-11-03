@@ -1,5 +1,5 @@
 from src.policy.jas_policy import JAS_policy
-from src.utils.mouselab_standalone import MouselabJas
+from src.utils.mouselab_jas import MouselabJas
 from src.utils.data_classes import Action, EpisodeResult
 import pandas as pd
 import time

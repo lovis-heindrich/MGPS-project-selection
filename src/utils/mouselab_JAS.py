@@ -1,438 +1,148 @@
-
-import random
-import math
+from typing import Generator
 import numpy as np
-from functools import lru_cache
-from scipy.stats import norm
-from toolz import get, compose, memoize
-from src.utils.mouselab_VAR import MouselabVar
-from src.utils.distributions import Normal, sample
-from src.utils.utils import tau_to_sigma
+from src.utils.data_classes import MouselabConfig, Action, State
+from src.utils.utils import tau_to_sigma, scale_normal
+from src.utils.distributions import Distribution, Normal, PointMass, sample, expectation
+import warnings
+
+from src.utils.env_creation import create_tree
+
+NO_CACHE = False
+if NO_CACHE:
+    lru_cache = lambda _: (lambda f: f)
+else:
+    from functools import lru_cache
+CACHE_SIZE = int(2**14)
+
+ZERO = PointMass(0)
 
 
-def hash_key(args, kwargs):
-    state = args[1]
-    hash_state = lambda state, conf: hash(state) + hash(conf)
-    if state is None:
-        return state
-    elif len(args) == 4: #V
-        n = args[2]
-        bins = args[3]
-        conf = str(n) + "+" + str(bins)
-        return hash_state(state, conf)
-    # elif len(args) == 5: #Q
-    else:
-        if kwargs:
-            # Blinkered approximation. Hash key is insensitive
-            # to states that can't be acted on, except for the
-            # best expected value
-            # Embed the action subset into the state.
-            action_subset = kwargs['action_subset']
-            mask = [0] * len(state)
-            for a in action_subset:
-                mask[a] = 1
-            state = tuple(zip(state, mask))
-        return hash_state(state)
+class MouselabJas:
+    def __init__(
+        self,
+        num_projects: int,
+        num_criterias: int,
+        init: State,
+        expert_costs: list[float],
+        expert_taus: list[float],
+        config: MouselabConfig,
+        criteria_scale: None | list[float] = None,
+        seed: None | int = None
+    ):
+        self.config = config
+        self.tree = create_tree(num_projects, num_criterias)
+        self.criteria_scale = criteria_scale
+        self.num_projects = num_projects
 
-def expect_lower(mean, sigma, T):
-    t = (T-mean)/sigma
-    if np.isclose(norm.cdf(t,0,1), 0):
-        return np.nan
-    return mean - sigma*norm.pdf(t,0,1)/norm.cdf(t,0,1)
+        if self.criteria_scale is None:
+            self.init = (0, *init[1:])
+        else:
+            tmp_scale: list[float] = self.criteria_scale * self.num_projects
+            self.init = (0, *[scale_normal(scale, node) for scale, node in zip(tmp_scale, init[1:])])
 
-def expect_higher(mean, sigma, T):
-    t = (T-mean)/sigma
-    if np.isclose(norm.cdf(t,0,1), 1):
-        return np.nan
-    return mean + sigma*norm.pdf(t,0,1)/(1-norm.cdf(t,0,1))
-
-class MouselabJas(MouselabVar):
-    """MetaMDP for a tree with a discrete unobserved reward function."""
-    metadata = {'render.modes': ['human', 'array']}
-    term_state = '__term_state__'
-
-    def __init__(self, tree, init, ground_truth=None, cost=0,
-                sample_term_reward=False, term_belief=True, tau=1, repeat_cost=1, myopic_mode="normal", limit_clicked_nodes=None, limit_repeat_clicks=1, samples=None, max_actions=None, expert_costs=None, expert_taus=None):
-
+        # Init costs and precision
         self.num_experts = len(expert_costs)
-        self.expert_taus = np.array(expert_taus)#np.array([0.1, 0.01, 0.001])
+        self.expert_taus = np.array(expert_taus)
         self.expert_sigma = tau_to_sigma(self.expert_taus)
-        self.expert_costs = expert_costs#[1, 0.5, 0.1]
-        
-        
-        super().__init__(tree, init, ground_truth=ground_truth, cost=cost, term_belief=term_belief, sample_term_reward=sample_term_reward, simple_cost=True)
+        self.expert_costs = expert_costs
+        self.expert_truths = np.zeros(shape=(self.num_experts, len(self.tree)))
 
-        self.expert_truths = np.zeros(shape=(self.num_experts, len(tree)))
+        self.term_action: Action = Action(self.num_experts, len(self.init))
+
+        self.seed = seed
+        self.reset()
+
+        assert (
+            len(self.ground_truth) == len(self.init) == len(self.state) == len(self.tree)
+        ), "state, rewards, and init must be the same length"
+        assert len(expert_costs) == len(
+            expert_taus
+        ), "expert precision and cost arrays must be the same length"
+
+    def reset(self, seed=None) -> State:
+        if self.seed is not None:
+            np.random.seed(self.seed)
+            assert seed is None, "Environment seed already set"
+        elif seed is not None:
+            np.random.seed(seed)
+        self.done = False
+        self.clicks: list[Action] = []
+        self.state: State = self.init
+        if self.config.ground_truth is None:
+            self.ground_truth = np.array(list(map(sample, self.init)))
+            self.ground_truth[0] = 0.0
+        else:
+            self.ground_truth = np.array(self.config.ground_truth)
+            if self.criteria_scale is not None:
+                self.ground_truth[1:] = self.ground_truth[1:] * np.array(self.criteria_scale * self.num_projects)
+            if self.ground_truth[0] != 0:
+                warnings.warn("ground_truth[0] will be set to 0", UserWarning)
+            self.ground_truth[0] = 0.0
+        # Resample experts
         for expert in range(self.num_experts):
             sigma = self.expert_sigma[expert]
             dist = [Normal(truth, sigma) for truth in self.ground_truth[1:]]
-            self.expert_truths[expert, :] = [self.ground_truth[0]] + [s.sample() for s in dist]
+            self.expert_truths[expert, :] = [self.ground_truth[0]] + [
+                s.sample() for s in dist
+            ]
+        return self.state
 
-        self.cost = lambda action: -abs(self.expert_costs[action[0]])
+    def cost(self, action: Action) -> float:
+        if action is self.term_action:
+            return 0
+        return -abs(self.expert_costs[action.expert])
 
-        self.term_action = 0
-        self.max_actions = max_actions
-        self.n_actions = self.action_space.n-1
-        self.n_obs = len(self.init)-1
+    def get_state(self, state: None | State) -> State:
+        if state == None:
+            state = self.state
+        assert state is not None
+        return state
 
-        # Precision for partial observations
-        self.tau = tau 
-        self.repeat_cost= - abs(repeat_cost)
-
-        # Overwrite Myopic VOC based on mode
-        if myopic_mode == "normal":
-            self.myopic_fun = lambda action, state: self.myopic_voc_normal(action, state)
-        elif myopic_mode == "discrete":
-            self.myopic_fun = lambda action, state: self.myopic_voc_discrete(action, state)
-        else:
-            self.myopic_fun = lambda action, state: self.myopic_voc(action, self.discretize(state, bins=4))
-        self.myopic_mode = myopic_mode
-        self.n_steps = [1, 2, 3, 5, 10]
-
-        # Stores all clicks
-        self.clicks = []
-        # Optional: Limit the number of different nodes that can be clicked
-        # This allows to constrain strategies to human working memory limitations
-        self.limit_clicks=limit_clicked_nodes
-        # Optional: Limit the number of times each node can be clicked
-        # This allows to represent memory constraints of how many samples humans can remember
-        self.limit_repeat_clicks=limit_repeat_clicks
-
-        # Fix observations with a dictionary of actions:[samples]
-        self.samples = samples
-
-        self._reset()
-
-    def _reset(self, reset_ground_truth=False):
-        if self.initial_states:
-            self.init = random.choice(self.initial_states)
-        self._state = self.init
-        obs_list = {}
-        for i in range(len(self.init)):
-            for e in range(self.num_experts):
-                obs_list[(e,i)] = []
-        self.obs_list = obs_list
-        self.clicks = []
-        if reset_ground_truth:
-            self.ground_truth = np.array(list(map(sample, self.init)))
-            self.ground_truth[0] = 0.
-        return self._state
-
-    def actions(self, state):
+    def actions(self, state: None | State = None) -> Generator[Action, None, None]:
         """Yields actions that can be taken in the given state.
         Actions include observing the value of each unobserved node and terminating.
         If a click limit is set only actions fulfilling that condition are returned.
         """
-        if state is self.term_state:
+        if self.done:
             return
-        if not self.max_actions or len(self.clicks) < self.max_actions:
+        state = self.get_state(state)
+        if not self.config.max_actions or len(self.clicks) < self.config.max_actions:
             for i, v in enumerate(state):
                 for e in range(self.num_experts):
-                    if hasattr(v, 'sample'):
-                        available = True
-                        if self.limit_clicks is not None:
-                            # If the limit of unique actions has been reached only allow repeat clicks
-                            if (len(np.unique(self.clicks)) >= self.limit_clicks) and (i not in self.clicks):
-                                available = False
-                        if self.limit_repeat_clicks is not None:
-                            # Only allow clicks which haven't reached the repeat limit
-                            if self.clicks.count((e, i)) >= self.limit_repeat_clicks:
-                                available = False
-                        if available:
-                            yield (e, i)
+                    if hasattr(v, "sample"):
+                        if (
+                            self.config.limit_repeat_clicks is None
+                            or self.clicks.count(Action(e, i))
+                            < self.config.limit_repeat_clicks
+                        ):
+                            yield Action(e, i)
         yield self.term_action
 
-    def myopic_action_feature(self, action):
+    def step(self, action: Action) -> tuple[State, float, bool, float]:
+        assert not self.done, "terminal state"
         if action == self.term_action:
-            return [0, 0]
-        else:
-            return [self.myopic_fun(action, self._state), self.cost(action)]
-
-    def get_best_path_action_set(self, action, state):
-        """ Expected reward of the best path including and excluding the given action.
-
-        Args:
-            action (int): Selected action
-            state (list): Environment state
-
-        Returns:
-            action_path_reward (float): The expected reward of the best path going through the given action
-            alternative_path_reward (float): The expected reward of the best path not going through the given action
-        """
-        assert len(action) == 2, "Adapt for new action format (expert, action)"
-        action_path_reward = -np.inf
-        alternative_path_reward = -np.inf
-        for path in self.all_paths_:
-            path_reward = 0
-            action_found = False
-            for node in path:
-                if node == action[1]:
-                    action_found = True
-                reward = state[node]
-                if hasattr(reward, "sample"):
-                    path_reward += reward.expectation()
-                else:
-                    path_reward += reward
-            if action_found:
-                action_path_reward = max(action_path_reward, path_reward)
-            else:
-                alternative_path_reward = max(alternative_path_reward, path_reward)
-        return action_path_reward, alternative_path_reward
-
-    def myopic_voc_normal(self, action, state, log=False, eps=1e-8):
-        """ Calculates the myopic VOC for a given action.
-
-        Args:
-            action (int): Selected action
-            state (list): Evaluated environment state
-
-        Returns:
-            voc (float): Myopic value of computation
-        """
-        if action == self.term_action:
-            return 0
-        assert hasattr(state[action], "sigma")
-        action_path_reward, alternative_path_reward = self.get_best_path_action_set(action, state)
-        action_path_without_node = action_path_reward - state[action].expectation()
-        
-        value, sigma = state[action].mu, state[action].sigma
-        tau_old = 1 / (sigma ** 2)
-        tau_new = tau_old + self.tau
-        sample_sigma = 1 / math.sqrt(self.tau)
-
-        # Sample threshold that leads to a different optimal path
-        threshold = (((alternative_path_reward - action_path_without_node)*tau_new) - (value * tau_old)) / self.tau
-        
-        # The path leading through the selected node is optimal
-        if action_path_reward > alternative_path_reward:
-            # Probability of sampling worse than the threshold value
-            p_being_worse = norm.cdf(threshold, value, np.sqrt(sigma**2+sample_sigma**2))
-            # Expected sample value given that it is below the threshold
-            expected_lower = expect_lower(value, np.sqrt(sigma**2+sample_sigma**2), threshold)
-            # Update the node distribution with the expected sample
-            updated_node = ((value * tau_old) + self.tau * expected_lower) / tau_new
-            # Gain = alternative path minus the new node path weighted by probability
-            voc = (alternative_path_reward - action_path_without_node - updated_node) * p_being_worse
-            if p_being_worse < eps or math.isnan(expected_lower):
-                voc = 0
-        # The path leading through the selected node is not optimal
-        else:
-            # Probability of sampling higher than the threshold
-            p_being_better = 1 - norm.cdf(threshold, value, np.sqrt(sigma**2+sample_sigma**2))
-            # Expected sample value given that it is above the threshold
-            expected_higher = expect_higher(value, np.sqrt(sigma**2+sample_sigma**2), threshold)
-            # Update the node distribution with the expected sample
-            updated_node = ((value * tau_old) + self.tau * expected_higher) / tau_new
-            # Gain = new node path minus the old path weighted by probability
-            voc = (action_path_without_node + updated_node - alternative_path_reward) * p_being_better
-            if p_being_better < eps or math.isnan(expected_higher):
-                voc = 0
-
-        if log:
-            print(f"Path value of the chosen action with N({value}, {sigma}): {action_path_reward}. Best alternative path reward: {alternative_path_reward}.")
-            print("Threshold", threshold)
-            if action_path_reward > alternative_path_reward:
-                print(f"Probability of sample to be lower than {threshold}: {p_being_worse}")
-                print(f"Expected value lower than {threshold}: {expected_lower}")
-            else:
-                print(f"Probability of sample to be higher than {threshold}: {p_being_better}")
-                print(f"Expected value higher than {threshold}: {expected_higher}")
-            print(f"Node value after observe: {updated_node}")
-            print(f"Myopic VOC: {voc}")
-        return voc
-
-    def myopic_voc_discrete(self, action, state, bins=4):
-        """ Myopic VOC computation based on discretized normal distribution states.
-
-        Args:
-            action (int): Selected action
-            state (list): Evaluated environment state
-
-        Returns:
-            voc (float): Myopic value of computation
-        """
-        # Discretized implementation
-        state = self.discretize(state, bins=bins)
-        node = state[action]
-        term_reward = self.expected_term_reward(state)
-        voc = 0
-        for p, v in zip(node.probs, node.vals):
-            # Update distribution of observed node
-            obs_state = self._observe_voc(action, self._state, v)
-            new_term_reward = self.expected_term_reward(obs_state)
-            voc += (new_term_reward - term_reward) * p
-        return voc
-
-    def dp_discrete(self, state, action=None, n=1, bins=4):
-        """ Approximate DP computation based on discretized normal distribution states.
-
-        Args:
-            action (int): Selected action
-            state (list): Evaluated environment state
-
-        Returns:
-            voc (float): Myopic value of computation
-        """
-
-        
-        # Discretized implementation
-        if action == None:
-            return self.v_rec(tuple(state), n, bins)
-        elif action == self.term_action:
-            return self.expected_term_reward(state)
-        else:
-            return self.q_rec(tuple(state), action, n, bins)
-    
-    @memoize(key = hash_key)
-    def v_rec(self, state, n, bins):
-        actions = self.actions(state)
-        if n == 0:
-            return self.expected_term_reward(state)
-        else: 
-            qs = []
-            for action in actions:
-                if action == self.term_action:
-                    qs.append(self.expected_term_reward(state))
-                else:
-                    q = self.q_rec(state, action, n, bins) 
-                    qs.append(q)
-            return max(qs)
-
-    def q_rec(self, state, action, n, bins):
-        state_disc = self.discretize(state, bins=bins)
-        node = state_disc[action]
-        q_val = 0
-        for p, v in zip(node.probs, node.vals):
-            # Update distribution of observed node
-            new_state = self._observe_voc(action, state, v)
-            q_val += (self.v_rec(new_state, n-1, bins) * p)
-        return q_val + self.cost(action)
-
-    def _observe_voc(self, action, state, obs):
-        # Update distribution without a given observation instead of random sample
-        state = [s for s in state]
-        expert, query = action
-        mean_old = state[query].mu
-        sigma_old = state[query].sigma
-        tau_old = 1 / (sigma_old ** 2)
-        tau_new = tau_old + self.expert_taus[expert]
-        mean_new = ((mean_old * tau_old) + self.expert_taus[expert] * obs) / tau_new
-        sigma_new = 1 / math.sqrt(tau_new)
-        state[action] = Normal(mean_new, sigma_new)
-        return tuple(state)
-
-    def _step(self, action, obs=None):
-        if self._state is self.term_state:
-            assert 0, 'state is terminal'
-        if action == self.term_action:
-            reward = self._term_reward()
+            self.done = True
+            reward = self.term_reward()
             done = True
-            obs=False
-            return self._state, reward, done, obs
-        expert, query = action
-        if (self.limit_repeat_clicks is not None and self.clicks.count((expert, query)) >= self.limit_repeat_clicks) or not hasattr(self._state[query], 'sample'): # already observed
-            self.clicks.append(action)
-            reward = self.repeat_cost
-            done = False
-            obs=True
-        else:  # observe a new node
-            # Get observation from list
-            if self.samples is not None:
-                if len(self.samples[action]) > 0:
-                    obs = self.samples[action].pop(0)
-                else:
-                    raise Exception(f"Sample-list {action} is empty")
-            self.clicks.append(action)
-            self._state = self._observe(action, obs=obs)
-            reward = self.cost(action)
-            done = False
-            obs=self.obs_list[action][-1]
-            #print(f"Updated node {action} with mean {self._state[action].mu} sigma {self._state[action].sigma} and sample {obs}")
-        return self._state, reward, done, obs
+            obs = 0.0
+            return self.state, reward, done, obs
+        # Assert that legal action is taken
+        assert (self.config.max_actions is None) | (
+            len(self.clicks) < self.config.max_actions
+        ), "max actions reached"
+        assert (self.config.limit_repeat_clicks is None) | (
+            self.clicks.count(action) < self.config.limit_repeat_clicks
+        ), "max repeat clicks reached"
+        assert hasattr(self.state[action.query], "sample"), "state already observed"
+        # Observe a new node
+        self.clicks.append(action)
+        self.state, obs = self.observe(action)
+        reward = self.cost(action)
+        done = False
+        return self.state, reward, done, obs
 
-    def simulate(self, action, state, discretize=False, bins=4):
-        if state is self.term_state:
-            assert 0, 'state is terminal'
-        if action == self.term_action:
-            reward = self.expected_term_reward(state)
-            done = True
-            obs = False
-            return state, reward, done, obs
-        elif not hasattr(state[action], 'sample'):  # already observed
-            raise Exception(f"State {action} not a distribution.")
-            reward = self.repeat_cost
-            done = False
-            obs=True
-        else:  # observe a new node
-            if discretize:
-                state_disc = state[action].to_discrete(n=bins, max_sigma=2)
-                obs = state_disc.sample()
-            else:
-                obs = state[action].sample()
-            mean_old = state[action].mu
-            sigma_old = state[action].sigma
-            tau_old = 1 / (sigma_old ** 2)
-            tau_new = tau_old + self.tau
-            mean_new = ((mean_old * tau_old) + self.tau * obs) / tau_new
-            sigma_new = 1 / math.sqrt(tau_new)
-            state = tuple([s if i != action else Normal(mean_new, sigma_new) for i, s in enumerate(state)])
-            reward = self.cost(action)
-            done = False
-        return state, reward, done, obs
-
-    # Discretize before calculating features
-    def action_features(self, action, bins=4, state=None):
-        """Returns the low action features used for BMPS
-
-        Arguments:
-            action: low level action for computation
-            option: option for which computation
-            bins: number of bins for discretization
-            state: low state for computation
-        """
-        state = state if state is not None else self._state
-        state_disc = self.discretize(state, bins)
-
-        assert state is not None
-
-        if action == self.term_action:
-            if self.simple_cost:
-                return np.array([
-                    0,
-                    0,
-                    0,
-                    0,
-                    self.expected_term_reward(state)
-                ])
-            else:
-                return np.array([
-                    [0, 0, 0],
-                    0,
-                    0,
-                    0,
-                    self.expected_term_reward(state)
-                ])
-
-        if self.simple_cost:
-            return np.array([
-                self.cost(action),
-                self.myopic_fun(action, state),
-                self.vpi_action(action, state_disc),
-                self.vpi(state_disc),
-                self.expected_term_reward(state)
-            ])
-
-        else:
-            return np.array([
-                self.action_cost(action),
-                self.myopic_fun(action, state),
-                self.vpi_action(action, state_disc),
-                self.vpi(state_disc),
-                self.expected_term_reward(state)
-            ])
-
-    def _observe(self, action, obs=None):
-        """ Observes a state in a partially observable environment by updating the Normal distribution with the new observation
+    def observe(self, action: Action) -> tuple[State, float]:
+        """Observes a state in a partially observable environment by updating the Normal distribution with the new observation
 
         Args:
             action (int): The action performed
@@ -440,59 +150,134 @@ class MouselabJas(MouselabVar):
         Returns:
             Tuple: Updated state after observation
         """
-        expert, query = action
-        mean_old = self._state[query].mu
-        sigma_old = self._state[query].sigma
-        tau_old = 1 / (sigma_old ** 2)
-        if obs==None:
-            obs = self.expert_truths[expert, query]
-        self.obs_list[action].append(obs)
-        tau_new = tau_old + self.expert_taus[expert]
-        mean_new = ((mean_old * tau_old) + self.expert_taus[expert] * obs) / tau_new
-        sigma_new = 1 / math.sqrt(tau_new)
-        s = list(self._state)
-        s[query] = Normal(mean_new, sigma_new)
-        return tuple(s)
+        node_state = self.state[action.query]
+        assert isinstance(
+            node_state, Normal
+        ), "only Normal distributions are supported as of now"
+        tau_old = 1 / (node_state.sigma**2)
+        obs = self.expert_truths[action.expert, action.query]
+        tau_new = tau_old + self.expert_taus[action.expert]
+        mean_new = (
+            (node_state.mu * tau_old) + self.expert_taus[action.expert] * obs
+        ) / tau_new
+        sigma_new = 1 / np.sqrt(tau_new)
+        s = list(self.state)
+        s[action.query] = Normal(mean_new, sigma_new)
+        return tuple(s), obs
 
-    def _observe_voc(self, action, state, obs):
-        expert, query = action
-        state = [s for s in state]
-        mean_old = state[query].mu
-        sigma_old = state[query].sigma
-        tau_old = 1 / (sigma_old ** 2)
-        tau_new = tau_old + self.expert_taus[expert]
-        mean_new = ((mean_old * tau_old) + self.expert_taus[expert] * obs) / tau_new
-        sigma_new = 1 / math.sqrt(tau_new)
-        state[action] = Normal(mean_new, sigma_new)
-        return tuple(state)
+    def term_reward(self, state: None | State = None) -> float:
+        state = self.get_state(state)
+        if self.config.term_belief:
+            return self.expected_term_reward(state)  # TODO
 
-    @classmethod
-    def new_symmetric(cls, branching, reward, repl_init=None, seed=None, **kwargs):
-        """Returns a MouselabEnv with a symmetric structure.
+        returns = np.array(
+            [self.ground_truth[list(path)].sum() for path in self.optimal_paths(state)]
+        )
+        if self.config.sample_term_reward:
+            return float(np.random.choice(returns))
+        else:
+            return np.mean(returns)
 
-        Arguments:
-            branching: a list that specifies the branching factor at each depth.
-            reward: a function that returns the reward distribution at a given depth."""
-        if seed is not None:
-            np.random.seed(seed)
-        if not callable(reward):
-            r = reward
-            reward = lambda depth: r
+    @lru_cache(CACHE_SIZE)
+    def expected_term_reward(self, state: State):
+        return self.node_value(0, state).expectation()
 
-        init = []
-        tree = []
+    def node_value(self, node: int, state: None | State = None):
+        """A distribution over total rewards after the given node."""
+        state = self.get_state(state)
+        return max(
+            (self.node_value(n1, state) + state[n1] for n1 in self.tree[node]),
+            default=ZERO,
+            key=expectation,
+        )
 
-        def expand(d):
-            my_idx = len(init)
-            init.append(reward(d))
-            children = []
-            tree.append(children)
-            for _ in range(get(d, branching, 0)):
-                child_idx = expand(d+1)
-                children.append(child_idx)
-            return my_idx
+    def optimal_paths(
+        self, state: None | State = None, tolerance=0.01
+    ) -> Generator[tuple[int, ...], None, None]:
+        state = self.get_state(state)
 
-        expand(0)
-        if repl_init is not None: #TODO Check changes
-            init = repl_init
-        return cls(tree, init, **kwargs)
+        def rec(path: tuple[int, ...]) -> Generator[tuple[int, ...], None, None]:
+            children = self.tree[path[-1]]
+            if not children:
+                yield path
+                return
+            quals = [self.node_quality(n1, state).expectation() for n1 in children]
+            best_q = max(quals)
+            for n1, q in zip(children, quals):
+                if np.abs(q - best_q) < tolerance:
+                    yield from rec(path + (n1,))
+
+        yield from rec((0,))
+
+    def node_quality(self, node: int, state: None | State = None) -> Distribution:
+        """A distribution of total expected rewards if this node is visited."""
+        state = self.get_state(state)
+        return self.node_value_to(node, state) + self.node_value(node, state)
+
+    def node_value_to(self, node: int, state: None | State = None) -> Distribution:
+        """A distribution over rewards up to and including the given node."""
+        state = self.get_state(state)
+        all_paths = self.path_to(node)
+        values: list[float] = []
+        path_rewards: list[Distribution] = []
+        for path in all_paths:
+            path_reward = ZERO
+            for n in path:
+                if hasattr(n, "sample"):
+                    path_reward += state[n]
+                else:
+                    path_reward += state[n]
+            path_rewards.append(path_reward)
+            values.append(path_reward.expectation())
+        best_path = np.argmax(values)
+        return path_rewards[best_path]
+
+    def path_to(self, node: int) -> list[list[int]]:
+        """Returns all paths leading to a given node.
+
+        Args:
+            node (int): Target node paths to are searched for
+
+        Returns:
+            list of list of int: All paths to the node in a nested list
+        """
+        all_paths = self.all_paths()
+        node_paths = [p for p in all_paths if node in p]
+        # Cut of remaining path after target node
+        up_to_node = [p[: p.index(node) + 1] for p in node_paths]
+        return up_to_node
+
+    @lru_cache(CACHE_SIZE)
+    def all_paths(self, start=0) -> list[list[int]]:
+        def rec(path):
+            children = self.tree[path[-1]]
+            if children:
+                for child in children:
+                    yield from rec(path + [child])
+            else:
+                yield path
+
+        return list(rec([start]))
+
+    def _render(self, mode='notebook', close=False):
+        if close:
+            return
+        from graphviz import Digraph
+        
+        
+        def color(val):
+            if val > 0:
+                return '#8EBF87'
+            else:
+                return '#F7BDC4'
+        
+        dot = Digraph()
+        for x, ys in enumerate(self.tree):
+            r = self._state[x]
+            observed = not hasattr(self._state[x], 'sample')
+            c = color(r) if observed else 'grey'
+            l = str(round(r, 2)) if observed else str(x)
+            dot.node(str(x), label=l, style='filled', color=c)
+            for y in ys:
+                dot.edge(str(x), str(y))
+        return dot

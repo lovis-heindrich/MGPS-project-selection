@@ -1,6 +1,6 @@
 import unittest
 import numpy as np
-from src.utils.mouselab_standalone import MouselabJas
+from src.utils.mouselab_jas import MouselabJas
 from src.utils.data_classes import Action, MouselabConfig
 from src.utils.distributions import Normal
 
