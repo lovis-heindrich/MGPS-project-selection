@@ -2,11 +2,12 @@ from src.utils.mouselab_jas import MouselabJas
 from src.utils.data_classes import MouselabConfig
 from src.utils.distributions import Normal
 
+from typing import cast, Any
 import json
 
 def create_json(path: str, config: MouselabConfig, num_projects, num_criteria, init: list[Normal], expert_costs: list[float], expert_taus: list[float], criteria_scale: list[float] | None, seeds: list[int]) -> None:
     structure = {
-        "init": [0] + [[state.mu, state.sigma] for state in init[1:]],
+        "init": [0] + cast(list[Any], [[state.mu, state.sigma] for state in init[1:]]),
         "expert_costs": expert_costs,
         "expert_taus": expert_taus,
         "num_experts": len(expert_costs),
