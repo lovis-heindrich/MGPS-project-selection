@@ -8,11 +8,14 @@ import numpy as np
 
 class TestVOC(unittest.TestCase):
     def setUp(self) -> None:
-        expert_costs = [0.5, 2]
-        expert_taus = [0.01, 0.01]
-        config = MouselabConfig()
-        init = [Normal(0, 1), Normal(0, 20), Normal(0, 10)]
-        self.env = MouselabJas(2, 1, init, expert_costs, expert_taus, config)
+        config = MouselabConfig(
+            num_projects=2,
+            num_criterias=1,
+            expert_costs=[0.5, 2],
+            expert_taus=[0.01, 0.01],
+            init=[Normal(0, 1), Normal(0, 20), Normal(0, 10)]
+        )
+        self.env = MouselabJas(config)
         self.policy = JAS_voc_policy()
     
     def test_voc_values(self):
@@ -60,11 +63,14 @@ class TestVOC(unittest.TestCase):
 
 class TestSimulationVOC(unittest.TestCase):
     def setUp(self) -> None:
-        expert_costs = [0.01, 0.01] 
-        expert_taus = [0.001, 0.001]
-        config = MouselabConfig()
-        init = [Normal(0, 1), Normal(0, 20), Normal(0, 10)]
-        self.env = MouselabJas(2, 1, init, expert_costs, expert_taus, config)
+        config = MouselabConfig(
+            num_projects=2,
+            num_criterias=1,
+            expert_costs=[0.01, 0.01],
+            expert_taus = [0.001, 0.001],
+            init=[Normal(0, 1), Normal(0, 20), Normal(0, 10)]
+        )
+        self.env = MouselabJas(config)
         self.policy = JAS_voc_policy()
     
     def test_seeded_episode(self):

@@ -4,6 +4,7 @@ from src.utils.data_classes import MouselabConfig, Action, State
 from src.utils.utils import tau_to_sigma, scale_normal
 from src.utils.distributions import Distribution, Normal, PointMass, sample, expectation
 import warnings
+import numpy.typing as npt
 
 from src.utils.env_creation import create_tree
 
@@ -20,31 +21,28 @@ ZERO = PointMass(0)
 class MouselabJas:
     def __init__(
         self,
-        num_projects: int,
-        num_criterias: int,
-        init: State,
-        expert_costs: list[float],
-        expert_taus: list[float],
         config: MouselabConfig,
-        criteria_scale: None | list[float] = None,
+        ground_truth: npt.NDArray[np.float64] | None = None,
         seed: None | int = None
     ):
         self.config = config
-        self.tree = create_tree(num_projects, num_criterias)
-        self.criteria_scale = criteria_scale
-        self.num_projects = num_projects
+        self.tree = create_tree(config.num_projects, config.num_criterias)
+        self.criteria_scale = config.criteria_scale
+        self.num_projects = config.num_projects
+        # Initial ground truth value stored for resetting the environment
+        self.init_ground_truth = ground_truth
 
         if self.criteria_scale is None:
-            self.init = (0, *init[1:])
+            self.init = (0, *config.init[1:])
         else:
             tmp_scale: list[float] = self.criteria_scale * self.num_projects
-            self.init = (0, *[scale_normal(scale, node) for scale, node in zip(tmp_scale, init[1:])])
+            self.init = (0, *[scale_normal(scale, node) for scale, node in zip(tmp_scale, config.init[1:])])
 
         # Init costs and precision
-        self.num_experts = len(expert_costs)
-        self.expert_taus = np.array(expert_taus)
+        self.num_experts = len(config.expert_costs)
+        self.expert_taus = np.array(config.expert_taus)
         self.expert_sigma = tau_to_sigma(self.expert_taus)
-        self.expert_costs = expert_costs
+        self.expert_costs = config.expert_costs
         self.expert_truths = np.zeros(shape=(self.num_experts, len(self.tree)))
 
         self.term_action: Action = Action(self.num_experts, len(self.init))
@@ -55,8 +53,8 @@ class MouselabJas:
         assert (
             len(self.ground_truth) == len(self.init) == len(self.state) == len(self.tree)
         ), "state, rewards, and init must be the same length"
-        assert len(expert_costs) == len(
-            expert_taus
+        assert len(config.expert_costs) == len(
+            config.expert_taus
         ), "expert precision and cost arrays must be the same length"
 
     def reset(self, seed=None) -> State:
@@ -68,11 +66,13 @@ class MouselabJas:
         self.done = False
         self.clicks: list[Action] = []
         self.state: State = self.init
-        if self.config.ground_truth is None:
+        if self.init_ground_truth is None:
             self.ground_truth = np.array(list(map(sample, self.init)))
+            if self.criteria_scale is not None:
+                self.ground_truth[1:] = self.ground_truth[1:] * np.array(self.criteria_scale * self.num_projects)
             self.ground_truth[0] = 0.0
         else:
-            self.ground_truth = np.array(self.config.ground_truth)
+            self.ground_truth = np.array(self.init_ground_truth)
             if self.criteria_scale is not None:
                 self.ground_truth[1:] = self.ground_truth[1:] * np.array(self.criteria_scale * self.num_projects)
             if self.ground_truth[0] != 0:
