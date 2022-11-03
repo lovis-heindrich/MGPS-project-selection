@@ -53,7 +53,7 @@ class MouselabJas:
         self.reset()
 
         assert (
-            len(self.ground_truth) == len(self.init) == len(self.state)
+            len(self.ground_truth) == len(self.init) == len(self.state) == len(self.tree)
         ), "state, rewards, and init must be the same length"
         assert len(expert_costs) == len(
             expert_taus
