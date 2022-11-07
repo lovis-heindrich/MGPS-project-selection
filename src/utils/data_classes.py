@@ -6,6 +6,9 @@ State = tuple[int | float | Distribution, ...]
 Tree = list[list[int]]
 
 class Action(NamedTuple):
+    """ Meta-level actions are specified by the expert from whom information is requested and the tree node. 
+
+    """
     expert: int
     query: int
 

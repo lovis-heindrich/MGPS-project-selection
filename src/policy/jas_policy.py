@@ -1,5 +1,5 @@
 from src.utils.data_classes import Action
-from src.utils.mouselab_standalone import MouselabJas
+from src.utils.mouselab_jas import MouselabJas
 import numpy as np
 
 class JAS_policy():

@@ -2,7 +2,7 @@ import numpy as np
 from scipy.stats import norm
 from src.policy.jas_policy import JAS_policy
 from src.utils.data_classes import Action, State
-from src.utils.mouselab_standalone import MouselabJas
+from src.utils.mouselab_jas import MouselabJas
 from src.utils.distributions import Normal, expectation
 
 class JAS_voc_policy(JAS_policy):
@@ -33,7 +33,7 @@ class JAS_voc_policy(JAS_policy):
         action_path_reward = -np.inf
         alternative_path_reward = -np.inf
         for path in env.all_paths():
-            path_reward = 0
+            path_reward = 0.
             action_found = False
             for node in path:
                 if node == action.query:
@@ -55,12 +55,13 @@ class JAS_voc_policy(JAS_policy):
             state = env.state
         assert state is not None
         assert len(state) > action.query
-        assert isinstance(state[action.query], Normal) 
+        node = state[action.query]
+        assert isinstance(node, Normal)
         action_path_reward, alternative_path_reward = self.get_best_path_action_set(env, action, state)
-        action_path_without_node = action_path_reward - state[action.query].expectation()
+        action_path_without_node = action_path_reward - node.expectation()
         
         tau = env.expert_taus[action.expert]
-        value, sigma = state[action.query].mu, state[action.query].sigma
+        value, sigma = node.mu, node.sigma
         tau_old = 1 / (sigma ** 2)
         tau_new = tau_old + tau
         sample_sigma = 1 / np.sqrt(tau)
