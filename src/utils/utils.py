@@ -12,6 +12,17 @@ def tau_to_sigma(tau: np.ndarray) -> np.ndarray:
     """
     return np.sqrt(1/tau)
 
+def sigma_to_tau(sigma: np.ndarray) -> np.ndarray:
+    """ Converts the precision of a Normal distribution to its standard deviation.
+
+    Args:
+        tau (np.array): Precision values
+
+    Returns:
+        np.array: Sigma values
+    """
+    return 1/np.square(sigma)
+
 def ci(mu: float, sigma: float, z=1.959963984540054) -> tuple[float, float]:
     return (mu-sigma*z, mu+sigma*z)
 
