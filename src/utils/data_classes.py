@@ -14,6 +14,8 @@ class Action(NamedTuple):
 
 @dataclass
 class MouselabConfig:
+    """ Object containing parameters of mouselab_jas environments.
+    """
     # Number of project alternatives
     num_projects: int
     # Number of relevant evaluation criteria per project
@@ -36,6 +38,8 @@ class MouselabConfig:
     max_actions: int | None = 200
 
 class EpisodeResult(NamedTuple):
+    """ Object containing results of policy simulations.
+    """
     reward: float
     actions: int
     seed: int
