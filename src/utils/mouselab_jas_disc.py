@@ -32,11 +32,7 @@ class MouselabJas:
         # Initial ground truth value stored for resetting the environment
         self.init_ground_truth = ground_truth
 
-        if self.criteria_scale is None:
-            self.init = (0, *config.init[1:])
-        else:
-            tmp_scale: list[float] = self.criteria_scale * self.num_projects
-            self.init = (0, *[scale_normal(scale, node) for scale, node in zip(tmp_scale, config.init[1:])])
+        self.init = (0, *config.init[1:])
 
         # Init costs and precision
         self.num_experts = len(config.expert_costs)
@@ -85,6 +81,11 @@ class MouselabJas:
             self.expert_truths[expert, :] = [self.ground_truth[0]] + [
                 s.sample() for s in dist
             ]
+            if self.config.discretize_observations is not None:
+                min_obs, max_obs = self.config.discretize_observations
+                self.expert_truths = np.rint(self.expert_truths)
+                self.expert_truths[self.expert_truths<min_obs] = min_obs
+                self.expert_truths[self.expert_truths>max_obs] = max_obs
         return self.state
 
     def cost(self, action: Action) -> float:
@@ -170,9 +171,15 @@ class MouselabJas:
         if self.config.term_belief:
             return self.expected_term_reward(state)  # TODO
 
-        returns = np.array(
-            [self.ground_truth[list(path)].sum() for path in self.optimal_paths(state)]
-        )
+        if self.criteria_scale != None:
+            assert type(self.criteria_scale) == list
+            returns = np.array(
+                [(self.ground_truth[list(path[1:])]*np.array(self.criteria_scale)).sum() for path in self.optimal_paths(state)]
+            )
+        else:
+            returns = np.array(
+                [self.ground_truth[list(path)].sum() for path in self.optimal_paths(state)]
+            )
         if self.config.sample_term_reward:
             return float(np.random.choice(returns))
         else:
@@ -180,72 +187,25 @@ class MouselabJas:
 
     @lru_cache(CACHE_SIZE)
     def expected_term_reward(self, state: State):
-        return self.node_value(0, state).expectation()
+        for path in self.optimal_paths(state):
+            return self.expected_path_value(list(path), state)
 
-    def node_value(self, node: int, state: None | State = None):
-        """A distribution over total rewards after the given node."""
+    def expected_path_value(self, path: list[int], state: State) -> float:
+        if self.criteria_scale != None:
+            assert type(self.criteria_scale) == list
+            assert len(path[1:]) == len(self.criteria_scale)
+            return sum([expectation(state[node])*weight for node, weight in zip(path[1:], self.criteria_scale)])
+        else:
+            return sum([expectation(node) for node in path[1:]])
+    
+    def optimal_paths(self, state: None | State = None, tolerance=0.01) -> Generator[tuple[int, ...], None, None]:
         state = self.get_state(state)
-        return max(
-            (self.node_value(n1, state) + state[n1] for n1 in self.tree[node]),
-            default=ZERO,
-            key=expectation,
-        )
-
-    def optimal_paths(
-        self, state: None | State = None, tolerance=0.01
-    ) -> Generator[tuple[int, ...], None, None]:
-        state = self.get_state(state)
-
-        def rec(path: tuple[int, ...]) -> Generator[tuple[int, ...], None, None]:
-            children = self.tree[path[-1]]
-            if not children:
+        paths = list(self.all_paths())
+        path_values = [self.expected_path_value(path, state) for path in paths]
+        max_path = np.max(path_values)
+        for value, path in zip(path_values, paths):
+            if np.abs(max_path - value) < tolerance:
                 yield path
-                return
-            quals = [self.node_quality(n1, state).expectation() for n1 in children]
-            best_q = max(quals)
-            for n1, q in zip(children, quals):
-                if np.abs(q - best_q) < tolerance:
-                    yield from rec(path + (n1,))
-
-        yield from rec((0,))
-
-    def node_quality(self, node: int, state: None | State = None) -> Distribution:
-        """A distribution of total expected rewards if this node is visited."""
-        state = self.get_state(state)
-        return self.node_value_to(node, state) + self.node_value(node, state)
-
-    def node_value_to(self, node: int, state: None | State = None) -> Distribution:
-        """A distribution over rewards up to and including the given node."""
-        state = self.get_state(state)
-        all_paths = self.path_to(node)
-        values: list[float] = []
-        path_rewards: list[Distribution] = []
-        for path in all_paths:
-            path_reward = ZERO
-            for n in path:
-                if hasattr(n, "sample"):
-                    path_reward += state[n]
-                else:
-                    path_reward += state[n]
-            path_rewards.append(path_reward)
-            values.append(path_reward.expectation())
-        best_path = np.argmax(values)
-        return path_rewards[best_path]
-
-    def path_to(self, node: int) -> list[list[int]]:
-        """Returns all paths leading to a given node.
-
-        Args:
-            node (int): Target node paths to are searched for
-
-        Returns:
-            list of list of int: All paths to the node in a nested list
-        """
-        all_paths = self.all_paths()
-        node_paths = [p for p in all_paths if node in p]
-        # Cut of remaining path after target node
-        up_to_node = [p[: p.index(node) + 1] for p in node_paths]
-        return up_to_node
 
     @lru_cache(CACHE_SIZE)
     def all_paths(self, start=0) -> list[list[int]]:

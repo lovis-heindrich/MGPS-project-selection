@@ -36,6 +36,8 @@ class MouselabConfig:
     limit_repeat_clicks: int | None = 1
     # Overall maximum actions before termination
     max_actions: int | None = 200
+    # Discretize expert observations (inclusive range)
+    discretize_observations: None | tuple[int, int] = (1, 5)
 
 class EpisodeResult(NamedTuple):
     """ Object containing results of policy simulations.
