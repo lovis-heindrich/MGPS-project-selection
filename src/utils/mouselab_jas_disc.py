@@ -27,8 +27,13 @@ class MouselabJas:
     ):
         self.config = config
         self.tree = create_tree(config.num_projects, config.num_criterias)
-        self.criteria_scale = config.criteria_scale
         self.num_projects = config.num_projects
+        if config.criteria_scale is None:
+            self.criteria_scale = {i:1. for i in range(len(self.tree))}
+        else:
+            node_scale = [1] + config.criteria_scale*self.num_projects
+            assert len(node_scale) == len(self.tree)
+            self.criteria_scale = {i:weight for i, weight in enumerate(node_scale)}
         # Initial ground truth value stored for resetting the environment
         self.init_ground_truth = ground_truth
 
@@ -64,13 +69,9 @@ class MouselabJas:
         self.state: State = self.init
         if self.init_ground_truth is None:
             self.ground_truth = np.array(list(map(sample, self.init)))
-            # if self.criteria_scale is not None:
-            #     self.ground_truth[1:] = self.ground_truth[1:] * np.array(self.criteria_scale * self.num_projects)
             self.ground_truth[0] = 0.0
         else:
             self.ground_truth = np.array(self.init_ground_truth)
-            # if self.criteria_scale is not None:
-            #     self.ground_truth[1:] = self.ground_truth[1:] * np.array(self.criteria_scale * self.num_projects)
             if self.ground_truth[0] != 0:
                 warnings.warn("ground_truth[0] will be set to 0", UserWarning)
             self.ground_truth[0] = 0.0
@@ -171,15 +172,8 @@ class MouselabJas:
         if self.config.term_belief:
             return self.expected_term_reward(state)  # TODO
 
-        if self.criteria_scale != None:
-            assert type(self.criteria_scale) == list
-            returns = np.array(
-                [(self.ground_truth[list(path[1:])]*np.array(self.criteria_scale)).sum() for path in self.optimal_paths(state)]
-            )
-        else:
-            returns = np.array(
-                [self.ground_truth[list(path)].sum() for path in self.optimal_paths(state)]
-            )
+        returns = np.array([sum([self.ground_truth[node]*self.criteria_scale[node] for node in path]) for path in self.optimal_paths(state)])
+
         if self.config.sample_term_reward:
             return float(np.random.choice(returns))
         else:
@@ -191,12 +185,7 @@ class MouselabJas:
             return self.expected_path_value(list(path), state)
 
     def expected_path_value(self, path: list[int], state: State) -> float:
-        if self.criteria_scale != None:
-            assert type(self.criteria_scale) == list
-            assert len(path[1:]) == len(self.criteria_scale)
-            return sum([expectation(state[node])*weight for node, weight in zip(path[1:], self.criteria_scale)])
-        else:
-            return sum([expectation(node) for node in path[1:]])
+        return sum([expectation(state[node])*self.criteria_scale[node] for node in path])
     
     def optimal_paths(self, state: None | State = None, tolerance=0.01) -> Generator[tuple[int, ...], None, None]:
         state = self.get_state(state)

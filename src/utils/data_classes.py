@@ -44,5 +44,7 @@ class EpisodeResult(NamedTuple):
     """
     reward: float
     actions: int
-    seed: int
+    seed: int | None
     runtime: float
+    true_reward: float
+    expected_reward: float
