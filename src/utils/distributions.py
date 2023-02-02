@@ -1,3 +1,8 @@
+""" 
+Distribution classes from the original mouselab implementation. 
+Source: https://github.com/RationalityEnhancementGroup/mouselab-mdp-tools/blob/main/mouselab/distributions.py
+"""
+
 import numpy as np
 from collections import Counter
 import itertools as it

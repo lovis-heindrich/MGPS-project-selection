@@ -1,12 +1,11 @@
 from typing import Generator
 import numpy as np
 from src.utils.data_classes import MouselabConfig, Action, State
-from src.utils.utils import tau_to_sigma, scale_normal
-from src.utils.distributions import Distribution, Normal, PointMass, sample, expectation
+from src.utils.utils import tau_to_sigma
+from src.utils.env_creation import create_tree
+from src.utils.distributions import Normal, PointMass, sample, expectation
 import warnings
 import numpy.typing as npt
-
-from src.utils.env_creation import create_tree
 
 NO_CACHE = False
 if NO_CACHE:
@@ -27,16 +26,17 @@ class MouselabJas:
     ):
         self.config = config
         self.tree = create_tree(config.num_projects, config.num_criterias)
-        self.criteria_scale = config.criteria_scale
         self.num_projects = config.num_projects
+        if config.criteria_scale is None:
+            self.criteria_scale = {i:1. for i in range(len(self.tree))}
+        else:
+            node_scale = [1] + config.criteria_scale*self.num_projects
+            assert len(node_scale) == len(self.tree)
+            self.criteria_scale = {i:weight for i, weight in enumerate(node_scale)}
         # Initial ground truth value stored for resetting the environment
         self.init_ground_truth = ground_truth
 
-        if self.criteria_scale is None:
-            self.init = (0, *config.init[1:])
-        else:
-            tmp_scale: list[float] = self.criteria_scale * self.num_projects
-            self.init = (0, *[scale_normal(scale, node) for scale, node in zip(tmp_scale, config.init[1:])])
+        self.init = (0, *config.init[1:])
 
         # Init costs and precision
         self.num_experts = len(config.expert_costs)
@@ -68,13 +68,9 @@ class MouselabJas:
         self.state: State = self.init
         if self.init_ground_truth is None:
             self.ground_truth = np.array(list(map(sample, self.init)))
-            # if self.criteria_scale is not None:
-            #     self.ground_truth[1:] = self.ground_truth[1:] * np.array(self.criteria_scale * self.num_projects)
             self.ground_truth[0] = 0.0
         else:
             self.ground_truth = np.array(self.init_ground_truth)
-            # if self.criteria_scale is not None:
-            #     self.ground_truth[1:] = self.ground_truth[1:] * np.array(self.criteria_scale * self.num_projects)
             if self.ground_truth[0] != 0:
                 warnings.warn("ground_truth[0] will be set to 0", UserWarning)
             self.ground_truth[0] = 0.0
@@ -85,6 +81,11 @@ class MouselabJas:
             self.expert_truths[expert, :] = [self.ground_truth[0]] + [
                 s.sample() for s in dist
             ]
+            if self.config.discretize_observations is not None:
+                min_obs, max_obs = self.config.discretize_observations
+                self.expert_truths = np.rint(self.expert_truths)
+                self.expert_truths[self.expert_truths<min_obs] = min_obs
+                self.expert_truths[self.expert_truths>max_obs] = max_obs
         return self.state
 
     def cost(self, action: Action) -> float:
@@ -127,12 +128,12 @@ class MouselabJas:
             obs = 0.0
             return self.state, reward, done, obs
         # Assert that legal action is taken
-        assert (self.config.max_actions is None) | (
-            len(self.clicks) < self.config.max_actions
-        ), "max actions reached"
-        assert (self.config.limit_repeat_clicks is None) | (
-            self.clicks.count(action) < self.config.limit_repeat_clicks
-        ), "max repeat clicks reached"
+        if self.config.max_actions != None:
+            assert type(self.config.max_actions) == int
+            assert len(self.clicks) < self.config.max_actions, "max actions reached"
+        if self.config.limit_repeat_clicks is not None:
+            assert type(self.config.limit_repeat_clicks) == int
+            assert self.clicks.count(action) < self.config.limit_repeat_clicks, "max repeat clicks reached"
         assert hasattr(self.state[action.query], "sample"), "state already observed"
         # Observe a new node
         self.clicks.append(action)
@@ -168,11 +169,13 @@ class MouselabJas:
     def term_reward(self, state: None | State = None) -> float:
         state = self.get_state(state)
         if self.config.term_belief:
-            return self.expected_term_reward(state)  # TODO
+            return self.expected_term_reward(state)
+        else:
+            return self.true_term_reward(state)
 
-        returns = np.array(
-            [self.ground_truth[list(path)].sum() for path in self.optimal_paths(state)]
-        )
+    def true_term_reward(self, state: State):
+        returns = np.array([sum([self.ground_truth[node]*self.criteria_scale[node] for node in path]) for path in self.optimal_paths(state)])
+
         if self.config.sample_term_reward:
             return float(np.random.choice(returns))
         else:
@@ -180,72 +183,20 @@ class MouselabJas:
 
     @lru_cache(CACHE_SIZE)
     def expected_term_reward(self, state: State):
-        return self.node_value(0, state).expectation()
+        for path in self.optimal_paths(state):
+            return self.expected_path_value(list(path), state)
 
-    def node_value(self, node: int, state: None | State = None):
-        """A distribution over total rewards after the given node."""
+    def expected_path_value(self, path: list[int], state: State) -> float:
+        return sum([expectation(state[node])*self.criteria_scale[node] for node in path])
+    
+    def optimal_paths(self, state: None | State = None, tolerance=0.01) -> Generator[tuple[int, ...], None, None]:
         state = self.get_state(state)
-        return max(
-            (self.node_value(n1, state) + state[n1] for n1 in self.tree[node]),
-            default=ZERO,
-            key=expectation,
-        )
-
-    def optimal_paths(
-        self, state: None | State = None, tolerance=0.01
-    ) -> Generator[tuple[int, ...], None, None]:
-        state = self.get_state(state)
-
-        def rec(path: tuple[int, ...]) -> Generator[tuple[int, ...], None, None]:
-            children = self.tree[path[-1]]
-            if not children:
+        paths = list(self.all_paths())
+        path_values = [self.expected_path_value(path, state) for path in paths]
+        max_path = np.max(path_values)
+        for value, path in zip(path_values, paths):
+            if np.abs(max_path - value) < tolerance:
                 yield path
-                return
-            quals = [self.node_quality(n1, state).expectation() for n1 in children]
-            best_q = max(quals)
-            for n1, q in zip(children, quals):
-                if np.abs(q - best_q) < tolerance:
-                    yield from rec(path + (n1,))
-
-        yield from rec((0,))
-
-    def node_quality(self, node: int, state: None | State = None) -> Distribution:
-        """A distribution of total expected rewards if this node is visited."""
-        state = self.get_state(state)
-        return self.node_value_to(node, state) + self.node_value(node, state)
-
-    def node_value_to(self, node: int, state: None | State = None) -> Distribution:
-        """A distribution over rewards up to and including the given node."""
-        state = self.get_state(state)
-        all_paths = self.path_to(node)
-        values: list[float] = []
-        path_rewards: list[Distribution] = []
-        for path in all_paths:
-            path_reward = ZERO
-            for n in path:
-                if hasattr(n, "sample"):
-                    path_reward += state[n]
-                else:
-                    path_reward += state[n]
-            path_rewards.append(path_reward)
-            values.append(path_reward.expectation())
-        best_path = np.argmax(values)
-        return path_rewards[best_path]
-
-    def path_to(self, node: int) -> list[list[int]]:
-        """Returns all paths leading to a given node.
-
-        Args:
-            node (int): Target node paths to are searched for
-
-        Returns:
-            list of list of int: All paths to the node in a nested list
-        """
-        all_paths = self.all_paths()
-        node_paths = [p for p in all_paths if node in p]
-        # Cut of remaining path after target node
-        up_to_node = [p[: p.index(node) + 1] for p in node_paths]
-        return up_to_node
 
     @lru_cache(CACHE_SIZE)
     def all_paths(self, start=0) -> list[list[int]]:

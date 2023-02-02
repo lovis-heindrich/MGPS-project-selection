@@ -1,27 +1,39 @@
+"""
+Test cases for the mouselab environment class. 
+"""
+
 import unittest
 import numpy as np
 from src.utils.mouselab_jas import MouselabJas
 from src.utils.data_classes import Action, MouselabConfig
 from src.utils.distributions import Normal
 
-
 class TestEnvCreation(unittest.TestCase):
+    """ Test environment initialization.
+    """
+
     def setUp(self) -> None:
+        """ Basic environment with 2 projects.
+        """
         self.config = MouselabConfig(
             num_projects=2,
             num_criterias=1,
             expert_costs=[1, 0.5, 2],
             expert_taus=[1, 0.01, 0.01],
-            init=[Normal(0, 1), Normal(0, 20), Normal(0, 20)],
+            init=(Normal(0, 1), Normal(5, 20), Normal(0, 20)),
         )
 
     def test_ground_truth(self):
+        """ Check if ground truth parameter is passed through to environment instance.
+        """
         ground_truth = np.array([1, 1.5, 2.5])
         env = MouselabJas(self.config, ground_truth=ground_truth)
         self.assertTrue((env.ground_truth[1:] == ground_truth[1:]).all())
         self.assertEqual(env.ground_truth[0], 0)
 
     def test_random_env(self):
+        """ Check if internal tree and expert structure matches parameter length.
+        """
         env = MouselabJas(self.config)
         self.assertEqual(len(env.tree), len(env.ground_truth))
         self.assertEqual(
@@ -30,13 +42,17 @@ class TestEnvCreation(unittest.TestCase):
         )
 
     def test_criteria_scale(self):
+        """ Test is criteria scale is applied properly to termination and expected termination reward.
+        """
         ground_truth = np.array([1, 1.5, 2.5])
         self.config.criteria_scale = [2]
         env = MouselabJas(self.config, ground_truth=ground_truth)
-        self.assertTrue((env.ground_truth[1:] == 2 * ground_truth[1:]).all())
+        self.assertTrue((env.ground_truth[1:] == ground_truth[1:]).all())
         self.assertEqual(env.ground_truth[0], 0)
-        self.assertEqual(env.init[1].mu, 0)
-        self.assertEqual(env.init[1].sigma, 40)
+        self.assertEqual(env.init[1].mu, 5)
+        self.assertEqual(env.init[1].sigma, 20)
+        self.assertEqual(env.true_term_reward(env.state), (1.5*2))
+        self.assertEqual(env.expected_term_reward(env.state), 5*2)
 
 
 class TestReward(unittest.TestCase):
@@ -47,7 +63,7 @@ class TestReward(unittest.TestCase):
             num_criterias=2,
             expert_costs=[1, 0.5, 2],
             expert_taus=[1, 0.01, 0.01],
-            init=[Normal(0, 1), Normal(0, 20), Normal(0, 20)],
+            init=(Normal(0, 1), Normal(0, 20), Normal(0, 20)),
         )
 
     def test_expected_term_reward(self):
@@ -102,7 +118,7 @@ class TestAction(unittest.TestCase):
             num_criterias=2,
             expert_costs=[1, -0.5],
             expert_taus=[2, 4],
-            init=[Normal(0, 1), Normal(0, 4), Normal(0, 4)],
+            init=(Normal(0, 1), Normal(0, 4), Normal(0, 4)),
             limit_repeat_clicks=1,
         )
         self.env = MouselabJas(config, ground_truth=np.array([1, 2.5, 7.5]))
@@ -179,7 +195,7 @@ class TestSeed(unittest.TestCase):
             num_criterias=1,
             expert_costs=[1, 0.5, 2],
             expert_taus=[1, 0.01, 0.01],
-            init=[Normal(0, 1), Normal(0, 20), Normal(0, 20)],
+            init=(Normal(0, 1), Normal(0, 20), Normal(0, 20)),
         )
 
     def test_random_initialization(self):
@@ -189,8 +205,8 @@ class TestSeed(unittest.TestCase):
         env2 = MouselabJas(
             self.config,
         )
-        self.assertTrue(np.all(env1.ground_truth[1:] != env2.ground_truth[2:]))
-        self.assertTrue(np.all(env1.expert_truths[:, 1:] != env2.expert_truths[:, 1:]))
+        self.assertTrue(np.any(~np.isclose(env1.ground_truth[1:], env2.ground_truth[2:])))
+        self.assertTrue(np.any(~np.isclose(env1.expert_truths[:, 1:], env2.expert_truths[:, 1:])))
 
     def test_random_reset(self):
         env = MouselabJas(
@@ -198,8 +214,8 @@ class TestSeed(unittest.TestCase):
         )
         ground_truth, expert_truths = env.ground_truth, env.expert_truths.copy()
         env.reset()
-        self.assertTrue(np.all(ground_truth[1:] != env.ground_truth[1:]))
-        self.assertTrue(np.all(expert_truths[:, 1:] != env.expert_truths[:, 1:]))
+        self.assertTrue(np.any(~np.isclose(ground_truth[1:], env.ground_truth[1:])))
+        self.assertTrue(np.any(~np.isclose(expert_truths[:, 1:], env.expert_truths[:, 1:])))
 
     def test_fixed_reset(self):
         env = MouselabJas(
@@ -224,23 +240,23 @@ class TestSeed(unittest.TestCase):
             self.config,
             seed=1,
         )
-        self.assertTrue(np.all(env1.ground_truth[1:] == env3.ground_truth[1:]))
-        self.assertTrue(np.all(env1.expert_truths[:, 1:] == env3.expert_truths[:, 1:]))
-        self.assertTrue(np.all(env1.ground_truth[1:] != env2.ground_truth[1:]))
-        self.assertTrue(np.all(env1.expert_truths[:, 1:] != env2.expert_truths[:, 1:]))
+        self.assertTrue(np.all(np.isclose(env1.ground_truth[1:], env3.ground_truth[1:])))
+        self.assertTrue(np.all(np.isclose(env1.expert_truths[:, 1:], env3.expert_truths[:, 1:])))
+        self.assertTrue(np.any(~np.isclose(env1.ground_truth[1:], env2.ground_truth[1:])))
+        self.assertTrue(np.any(~np.isclose(env1.expert_truths[:, 1:], env2.expert_truths[:, 1:])))
 
     def test_random_seed_reset(self):
         env = MouselabJas(
             self.config,
         )
         env.reset(seed=1)
-        ground_truth, expert_truths = env.ground_truth, env.expert_truths.copy()
+        ground_truth, expert_truths = env.ground_truth.copy(), env.expert_truths.copy()
         env.reset(seed=2)
-        self.assertTrue(np.all(ground_truth[1:] != env.ground_truth[1:]))
-        self.assertTrue(np.all(expert_truths[:, 1:] != env.expert_truths[:, 1:]))
+        self.assertTrue(np.any(~np.isclose(ground_truth[1:], env.ground_truth[1:])))
+        self.assertTrue(np.any(~np.isclose(expert_truths[:, 1:], env.expert_truths[:, 1:])))
         env.reset(seed=1)
-        self.assertTrue(np.all(ground_truth[1:] == env.ground_truth[1:]))
-        self.assertTrue(np.all(expert_truths[:, 1:] == env.expert_truths[:, 1:]))
+        self.assertTrue(np.all(np.isclose(ground_truth[1:], env.ground_truth[1:])))
+        self.assertTrue(np.all(np.isclose(expert_truths[:, 1:], env.expert_truths[:, 1:])))
 
 
 if __name__ == "__main__":

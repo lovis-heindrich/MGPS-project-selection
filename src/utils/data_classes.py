@@ -1,3 +1,7 @@
+"""
+Custom data classes.
+"""
+
 from typing import NamedTuple
 from src.utils.distributions import Distribution
 from dataclasses import dataclass

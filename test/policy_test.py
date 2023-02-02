@@ -79,14 +79,13 @@ class TestSimulationVOC(unittest.TestCase):
         res3 = run_episode(self.env, self.policy, seed=2)
         self.assertTrue(res1.reward == res2.reward != res3.reward)
         self.assertTrue(res1.seed == res2.seed != res3.seed)
-        #self.assertTrue(res1.actions == res2.actions != res3.actions)
+        self.assertTrue(res1.actions == res2.actions)
     
     def test_non_seeded_episode(self):
         res1 = run_episode(self.env, self.policy)
         res2 = run_episode(self.env, self.policy)
         res3 = run_episode(self.env, self.policy)
         self.assertTrue(res1.reward != res2.reward != res3.reward)
-        #self.assertTrue(res1.actions != res2.actions != res3.actions)
     
     def test_seeded_evaluation(self):
         res1 = run_simulation(self.env, self.policy, n=10, start_seed=5)

@@ -1,3 +1,7 @@
+""" 
+Helper function to create mouselab environments.
+"""
+
 from src.utils.distributions import Normal
 
 def create_tree(num_projects: int, num_criteria: int) -> list[list[int]]:
