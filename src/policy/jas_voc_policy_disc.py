@@ -2,7 +2,7 @@ import numpy as np
 from scipy.stats import norm
 from src.policy.jas_policy import JAS_policy
 from src.utils.data_classes import Action, State
-from src.utils.mouselab_jas_disc import MouselabJas
+from src.utils.mouselab_jas import MouselabJas
 from src.utils.distributions import Normal, expectation
 
 class JAS_voc_policy(JAS_policy):
