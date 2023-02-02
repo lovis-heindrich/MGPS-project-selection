@@ -1,4 +1,8 @@
-from typing import Generator
+""" 
+Main mouselab environment adapted to the project selection choice task.
+"""
+
+from typing import Any, Generator
 import numpy as np
 from src.utils.data_classes import MouselabConfig, Action, State
 from src.utils.utils import tau_to_sigma
@@ -22,17 +26,19 @@ class MouselabJas:
         self,
         config: MouselabConfig,
         ground_truth: npt.NDArray[np.float64] | None = None,
-        seed: None | int = None
+        seed: None | int = None,
     ):
         self.config = config
         self.tree = create_tree(config.num_projects, config.num_criterias)
         self.num_projects = config.num_projects
+
+        # Criteria scale is converted to dictionary format
         if config.criteria_scale is None:
-            self.criteria_scale = {i:1. for i in range(len(self.tree))}
+            self.criteria_scale = {i: 1.0 for i in range(len(self.tree))}
         else:
-            node_scale = [1] + config.criteria_scale*self.num_projects
+            node_scale = [1] + config.criteria_scale * self.num_projects
             assert len(node_scale) == len(self.tree)
-            self.criteria_scale = {i:weight for i, weight in enumerate(node_scale)}
+            self.criteria_scale = {i: weight for i, weight in enumerate(node_scale)}
         # Initial ground truth value stored for resetting the environment
         self.init_ground_truth = ground_truth
 
@@ -48,16 +54,29 @@ class MouselabJas:
         self.term_action: Action = Action(self.num_experts, len(self.init))
 
         self.seed = seed
+
+        # Creates ground truth and expert samples
         self.reset()
 
         assert (
-            len(self.ground_truth) == len(self.init) == len(self.state) == len(self.tree)
+            len(self.ground_truth)
+            == len(self.init)
+            == len(self.state)
+            == len(self.tree)
         ), "state, rewards, and init must be the same length"
         assert len(config.expert_costs) == len(
             config.expert_taus
         ), "expert precision and cost arrays must be the same length"
 
-    def reset(self, seed=None) -> State:
+    def reset(self, seed: int | None = None) -> State:
+        """Resets the environment by resetting the state as well as generating new ground truth rewards and expert samples.
+
+        Args:
+            seed (int, optional): Environment seed. Defaults to None.
+
+        Returns:
+            State: New initial environment state
+        """
         if self.seed is not None:
             np.random.seed(self.seed)
             assert seed is None, "Environment seed already set"
@@ -84,16 +103,32 @@ class MouselabJas:
             if self.config.discretize_observations is not None:
                 min_obs, max_obs = self.config.discretize_observations
                 self.expert_truths = np.rint(self.expert_truths)
-                self.expert_truths[self.expert_truths<min_obs] = min_obs
-                self.expert_truths[self.expert_truths>max_obs] = max_obs
+                self.expert_truths[self.expert_truths < min_obs] = min_obs
+                self.expert_truths[self.expert_truths > max_obs] = max_obs
         return self.state
 
     def cost(self, action: Action) -> float:
+        """Returns the cost of the given action.
+
+        Args:
+            action (Action): Selected action
+
+        Returns:
+            float: Cost
+        """
         if action is self.term_action:
             return 0
         return -abs(self.expert_costs[action.expert])
 
     def get_state(self, state: None | State) -> State:
+        """Helper function that returns the given state. If no state is given the current environment state is returned.
+
+        Args:
+            state (None | State): State
+
+        Returns:
+            State: State
+        """
         if state == None:
             state = self.state
         assert state is not None
@@ -120,6 +155,14 @@ class MouselabJas:
         yield self.term_action
 
     def step(self, action: Action) -> tuple[State, float, bool, float]:
+        """Performs an action and updates the environment state accordingly.
+
+        Args:
+            action (Action): Action to be taken.
+
+        Returns:
+            tuple[State, float, bool, float]: New state, reward, done, observation
+        """
         assert not self.done, "terminal state"
         if action == self.term_action:
             self.done = True
@@ -133,7 +176,9 @@ class MouselabJas:
             assert len(self.clicks) < self.config.max_actions, "max actions reached"
         if self.config.limit_repeat_clicks is not None:
             assert type(self.config.limit_repeat_clicks) == int
-            assert self.clicks.count(action) < self.config.limit_repeat_clicks, "max repeat clicks reached"
+            assert (
+                self.clicks.count(action) < self.config.limit_repeat_clicks
+            ), "max repeat clicks reached"
         assert hasattr(self.state[action.query], "sample"), "state already observed"
         # Observe a new node
         self.clicks.append(action)
@@ -167,29 +212,88 @@ class MouselabJas:
         return tuple(s), obs
 
     def term_reward(self, state: None | State = None) -> float:
+        """Termination reward in the given state.
+
+        Args:
+            state (None | State, optional): State. Defaults to None.
+
+        Returns:
+            float: Termination reward.
+        """
         state = self.get_state(state)
         if self.config.term_belief:
             return self.expected_term_reward(state)
         else:
             return self.true_term_reward(state)
 
-    def true_term_reward(self, state: State):
-        returns = np.array([sum([self.ground_truth[node]*self.criteria_scale[node] for node in path]) for path in self.optimal_paths(state)])
+    def true_term_reward(self, state: State) -> float:
+        """True termination reward (based on ground truth values) in a given state.
+
+        Args:
+            state (State): State
+
+        Returns:
+            float: Termination reward
+        """
+        returns = np.array(
+            [
+                sum(
+                    [
+                        self.ground_truth[node] * self.criteria_scale[node]
+                        for node in path
+                    ]
+                )
+                for path in self.optimal_paths(state)
+            ]
+        )
 
         if self.config.sample_term_reward:
             return float(np.random.choice(returns))
         else:
-            return np.mean(returns)
+            return float(np.mean(returns))
 
     @lru_cache(CACHE_SIZE)
-    def expected_term_reward(self, state: State):
+    def expected_term_reward(self, state: State) -> float:
+        """Expected termination reward (based on current belief state) in a given state
+
+        Args:
+            state (State): State
+
+        Returns:
+            float: Termination reward
+        """
+        # Return first generator element
         for path in self.optimal_paths(state):
             return self.expected_path_value(list(path), state)
+        assert False, "Should never happen"
+        return 0.0
 
     def expected_path_value(self, path: list[int], state: State) -> float:
-        return sum([expectation(state[node])*self.criteria_scale[node] for node in path])
-    
-    def optimal_paths(self, state: None | State = None, tolerance=0.01) -> Generator[tuple[int, ...], None, None]:
+        """Return the summed expected values of all nodes on a given path.
+
+        Args:
+            path (list[int]): List of nodes visited.
+            state (State): State
+
+        Returns:
+            float: Expected value of visiting all nodes on the path
+        """
+        return sum(
+            [expectation(state[node]) * self.criteria_scale[node] for node in path]
+        )
+
+    def optimal_paths(
+        self, state: None | State = None, tolerance=0.01
+    ) -> Generator[tuple[int, ...], None, None]:
+        """Finds all paths through the environment that are optimal according to a given belief state.
+
+        Args:
+            state (None | State, optional): State. Defaults to the current state.
+            tolerance (float, optional): Tolerance for comparing path rewards. Defaults to 0.01.
+
+        Yields:
+            Generator[tuple[int, ...], None, None]: Optimal paths.
+        """
         state = self.get_state(state)
         paths = list(self.all_paths())
         path_values = [self.expected_path_value(path, state) for path in paths]
@@ -200,6 +304,15 @@ class MouselabJas:
 
     @lru_cache(CACHE_SIZE)
     def all_paths(self, start=0) -> list[list[int]]:
+        """Finds all possible paths from a given starting node.
+
+        Args:
+            start (int, optional): Node from which paths are generated. Defaults to the root node (0).
+
+        Returns:
+            list[list[int]]: List of all paths.
+        """
+
         def rec(path):
             children = self.tree[path[-1]]
             if children:
@@ -210,25 +323,33 @@ class MouselabJas:
 
         return list(rec([start]))
 
-    def _render(self, mode='notebook', close=False):
-        if close:
-            return
+    def _render(self) -> Any:
+        """Creates a graph diagram of the environment structure. Import is handled in the function as the library has complicated installation requirements.
+
+        Returns:
+            Digraph: Digraph diagram
+        """
         from graphviz import Digraph
-        
-        
+
         def color(val):
             if val > 0:
-                return '#8EBF87'
+                return "#8EBF87"
             else:
-                return '#F7BDC4'
-        
+                return "#F7BDC4"
+
         dot = Digraph()
         for x, ys in enumerate(self.tree):
             r = self.state[x]
-            observed = not hasattr(self.state[x], 'sample')
-            c = color(r) if observed else 'grey'
-            l = str(round(r, 2)) if observed else str(x)
-            dot.node(str(x), label=l, style='filled', color=c)
+            clicks = [click.query for click in self.clicks]
+            observed = clicks.index(x) >= 0
+            if not observed:
+                l = str(x)
+            elif type(r) == float:
+                l = str(round(r, 2))
+            else:
+                l = str(r)
+            c = color(r) if observed else "grey"
+            dot.node(str(x), label=l, style="filled", color=c)
             for y in ys:
                 dot.edge(str(x), str(y))
         return dot
