@@ -1,9 +1,10 @@
 from src.policy.jas_policy import JAS_policy
-from src.utils.mouselab_jas_disc import MouselabJas
+from src.utils.mouselab_jas import MouselabJas
 from src.utils.data_classes import Action, EpisodeResult
 import pandas as pd
 import time
 import numpy as np
+from tqdm import tqdm
 
 def run_episode(env: MouselabJas, policy: JAS_policy, seed: int | None = None) -> EpisodeResult:
     """ Run a single episode using the supplied policy and environment.
@@ -23,6 +24,7 @@ def run_episode(env: MouselabJas, policy: JAS_policy, seed: int | None = None) -
     cost = 0.
     while not env.done:
         action = policy.act(env)
+        #print(action)
         _, reward, _, _ = env.step(action)
         episode_reward += reward
         episode_actions.append(action)
@@ -30,9 +32,9 @@ def run_episode(env: MouselabJas, policy: JAS_policy, seed: int | None = None) -
     expected_reward = env.expected_term_reward(env.state) + cost
     true_reward = np.mean(np.array([sum([env.ground_truth[node]*env.criteria_scale[node] for node in path]) for path in env.optimal_paths(env.state)])) + cost
     runtime = time.process_time() - start_time
-    return EpisodeResult(episode_reward, len(episode_actions), seed, runtime, expected_reward, true_reward)
+    return EpisodeResult(reward=episode_reward, actions=len(episode_actions), seed=seed, runtime=runtime, true_reward=true_reward, expected_reward=expected_reward)
 
-def run_simulation(env: MouselabJas, policy: JAS_policy, n=1000, start_seed=None) -> pd.DataFrame:
+def run_simulation(env: MouselabJas, policy: JAS_policy, n=1000, start_seed=None, use_tqdm=True) -> pd.DataFrame:
     """ Run simulations for a number of episodes and aggregate the results.
 
     Args:
@@ -49,7 +51,7 @@ def run_simulation(env: MouselabJas, policy: JAS_policy, n=1000, start_seed=None
         start, end = start_seed, start_seed + n
     else:
         start, end = 0, n
-    for i in range(start, end):
+    for i in (tqdm(range(start, end)) if use_tqdm else range(start, end)):
         policy.reset()
         if start_seed is not None:
             result = run_episode(env, policy, i)

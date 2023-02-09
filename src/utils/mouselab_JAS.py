@@ -134,13 +134,17 @@ class MouselabJas:
         assert state is not None
         return state
 
-    def actions(self, state: None | State = None) -> Generator[Action, None, None]:
+    def actions(self, state: None | State = None, simulated_actions: list[Action] | None= None) -> Generator[Action, None, None]:
         """Yields actions that can be taken in the given state.
         Actions include observing the value of each unobserved node and terminating.
         If a click limit is set only actions fulfilling that condition are returned.
         """
         if self.done:
             return
+        if simulated_actions is None:
+            simulated_actions = []
+        assert simulated_actions is not None
+        click_counts = self.clicks + simulated_actions
         state = self.get_state(state)
         if not self.config.max_actions or len(self.clicks) < self.config.max_actions:
             for i, v in enumerate(state):
@@ -148,7 +152,7 @@ class MouselabJas:
                     if hasattr(v, "sample"):
                         if (
                             self.config.limit_repeat_clicks is None
-                            or self.clicks.count(Action(e, i))
+                            or click_counts.count(Action(e, i))
                             < self.config.limit_repeat_clicks
                         ):
                             yield Action(e, i)
