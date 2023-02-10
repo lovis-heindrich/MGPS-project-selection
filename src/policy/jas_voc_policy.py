@@ -1,3 +1,7 @@
+""" 
+Contains the myopic VOC based policy.
+"""
+
 import numpy as np
 from scipy.stats import norm
 from src.policy.jas_policy import JAS_policy
@@ -7,10 +11,11 @@ from src.utils.distributions import Normal, expectation
 from functools import lru_cache
 
 class JAS_voc_policy(JAS_policy):
-    def __init__(self, discrete_observations=True, discrete_depth=-1) -> None:
+    def __init__(self, discrete_observations=True, discrete_depth=-1, cost_weight=0.5) -> None:
         super().__init__()
         self.discrete_observations = discrete_observations
         self.discrete_depth = discrete_depth
+        self.cost_weight = cost_weight
 
     def act(self, env: MouselabJas) -> Action:
         """ Determines the next action based on the myopic VOC calculation.
@@ -24,7 +29,7 @@ class JAS_voc_policy(JAS_policy):
         actions = tuple(env.actions())
         values = [self.myopic_voc_normal(env, action) for action in actions]
         costs = [env.cost(action) for action in actions]
-        voc = [value + cost for value, cost in zip(values, costs)]
+        voc = [(1-self.cost_weight)*value + self.cost_weight*cost for value, cost in zip(values, costs)]
         # Choose randomly between actions with the same voc
         best_action_indices = np.argwhere(voc == np.max(voc)).flatten()
         chosen_action_index = np.random.choice(best_action_indices)
@@ -98,18 +103,19 @@ class JAS_voc_policy(JAS_policy):
         assert len(state) > action.query
         node = state[action.query]
         assert isinstance(node, Normal)
+        node_scale = env.criteria_scale[action.query]
         # TODO crtieria scaling 
         action_path_reward, alternative_path_reward = self.get_best_path_action_set(env, action, state)
-        action_path_without_node = action_path_reward - node.expectation()
+        action_path_without_node = action_path_reward - (node.expectation()*node_scale)
         
-        tau = env.expert_taus[action.expert]
-        value, sigma = node.mu, node.sigma
+        tau = env.expert_taus[action.expert]/(node_scale**2)
+        value, sigma = node.mu*node_scale, node.sigma*node_scale
         tau_old = 1 / (sigma ** 2)
         tau_new = tau_old + tau
         sample_sigma = 1 / np.sqrt(tau)
 
         # Sample threshold that leads to a different optimal path
-        threshold = (((alternative_path_reward - action_path_without_node)*tau_new) - (value * tau_old)) / tau
+        threshold = ((((alternative_path_reward - action_path_without_node)*tau_new) - (value * tau_old)) / tau) / node_scale
         
         # The path leading through the selected node is optimal
         if action_path_reward > alternative_path_reward:
@@ -175,17 +181,17 @@ class JAS_voc_policy(JAS_policy):
         min_obs, max_obs = env.config.discretize_observations
 
         # Rescale probabilities
-        probs = [norm.cdf((obs+0.5)*node_scale, value, np.sqrt(sigma**2+sample_sigma**2)) - norm.cdf((obs-0.5)*node_scale, value, np.sqrt(sigma**2+sample_sigma**2)) for obs in range(min_obs, max_obs+1)]
-        probs = [prob*(1/sum(probs)) for prob in probs]
+        # probs = [norm.cdf((obs+0.5)*node_scale, value, np.sqrt(sigma**2+sample_sigma**2)) - norm.cdf((obs-0.5)*node_scale, value, np.sqrt(sigma**2+sample_sigma**2)) for obs in range(min_obs, max_obs+1)]
+        # probs = [prob*(1/sum(probs)) for prob in probs]
 
-        # probs = []
-        # for obs in range(min_obs, max_obs+1):
-            #         if obs == min_obs:
-            #             probs.append(norm.cdf((obs+0.5)*node_scale, value, np.sqrt(sigma**2+sample_sigma**2)))
-            #         elif obs == max_obs:
-            #             probs.append(1 - norm.cdf((obs-0.5)*node_scale, value, np.sqrt(sigma**2+sample_sigma**2)))
-            #         else:
-            #             probs.append(norm.cdf((obs+0.5)*node_scale, value, np.sqrt(sigma**2+sample_sigma**2)) - norm.cdf((obs-0.5)*node_scale, value, np.sqrt(sigma**2+sample_sigma**2)))
+        probs = []
+        for obs in range(min_obs, max_obs+1):
+                    if obs == min_obs:
+                        probs.append(norm.cdf((obs+0.5)*node_scale, value, np.sqrt(sigma**2+sample_sigma**2)))
+                    elif obs == max_obs:
+                        probs.append(1 - norm.cdf((obs-0.5)*node_scale, value, np.sqrt(sigma**2+sample_sigma**2)))
+                    else:
+                        probs.append(norm.cdf((obs+0.5)*node_scale, value, np.sqrt(sigma**2+sample_sigma**2)) - norm.cdf((obs-0.5)*node_scale, value, np.sqrt(sigma**2+sample_sigma**2)))
         
         voc = 0
         # The path leading through the selected node is optimal
@@ -208,66 +214,20 @@ class JAS_voc_policy(JAS_policy):
                         voc += (action_path_without_node + updated_node - alternative_path_reward) * p
         return voc
 
-    # def myopic_voc_normal_discrete_rec(self, env: MouselabJas, action: Action, state: State| None = None, eps=1e-8, depth=1) -> float:
-    #     """ Computes the voc of a given action assuming observations are discrete.
-
-    #     Args:
-    #         env (MouselabJas): Environment
-    #         action (Action): Action for which to evaluate the voc
-    #         state (State | None, optional): State. Defaults to None.
-    #         eps (_type_, optional): Tolerance for comparisons. Defaults to 1e-8.
-
-    #     Returns:
-    #         float: Voc of the given action.
-    #     """
-    #     assert action in tuple(env.actions()), f"Action {action} not legal"
-    #     if action == env.term_action:
-    #         return 0
-    #     if state == None:
-    #         state = env.state
-    #     assert state is not None
-    #     assert len(state) > action.query
-    #     node = state[action.query]
-    #     node_scale = env.criteria_scale[action.query]
-    #     assert isinstance(node, Normal)
-        
-    #     tau = env.expert_taus[action.expert]/(node_scale**2)
-    #     value, sigma = node.mu*node_scale, node.sigma*node_scale
-    #     tau_old = 1 / (sigma ** 2)
-    #     tau_new = tau_old + tau
-    #     sample_sigma = 1 / np.sqrt(tau)
-    #     sigma_new = 1 / np.sqrt(tau_new)
-
-    #     assert type(env.config.discretize_observations) is tuple
-    #     min_obs, max_obs = env.config.discretize_observations
-
-    #     current_term_reward = env.expected_term_reward(state)
-    #     probs = []
-    #     for obs in range(min_obs, max_obs+1):
-    #                 if obs == min_obs:
-    #                     probs.append(norm.cdf((obs+0.5)*node_scale, value, np.sqrt(sigma**2+sample_sigma**2)))
-    #                 elif obs == max_obs:
-    #                     probs.append(1 - norm.cdf((obs-0.5)*node_scale, value, np.sqrt(sigma**2+sample_sigma**2)))
-    #                 else:
-    #                     probs.append(norm.cdf((obs+0.5)*node_scale, value, np.sqrt(sigma**2+sample_sigma**2)) - norm.cdf((obs-0.5)*node_scale, value, np.sqrt(sigma**2+sample_sigma**2)))
-        
-    #     voc = 0
-    #     for p, obs in zip(probs, range(min_obs, max_obs+1)):
-    #         if p > eps:
-    #             mean_new = ((value * tau_old) + tau * obs * node_scale) / tau_new
-    #             next_state = list(state)
-    #             next_state[action.query] = Normal(mean_new, sigma_new)
-    #             if depth >
-    #             voc += (action_path_without_node + updated_node - alternative_path_reward) * p
-
-    #     return voc
-
-
-    
-
     def myopic_voc_normal_discrete_rec(self, env: MouselabJas, action: Action, state: State| None = None, eps=1e-8, depth=2) -> float:
+        """ Slower recursive discrete algorithm. Can plan with planning depths > 1 but is likely too slow for use on any relevant environments.
+
+        Args:
+            env (MouselabJas): Environment
+            action (Action): Action for which to evaluate the voc
+            state (State | None, optional): State. Defaults to None.
+            eps (_type_, optional): Tolerance for comparisons. Defaults to 1e-8.
+
+        Returns:
+            float: Voc of the given action.
+        """
         @lru_cache(maxsize=None)
-        def v_rec(state: State, n: int, simulated_actions: tuple[Action,...]):
+        def v_rec(state: State, n: int, simulated_actions: tuple[Action,...]) -> float:
             actions = env.actions(state) # exclude simulated previous actions
             if n == 0:
                 return env.expected_term_reward(state)
@@ -281,7 +241,18 @@ class JAS_voc_policy(JAS_policy):
                         qs.append(q)
                 return max(qs)
 
-        def q_rec(state:State, action:Action, n:int, simulated_actions: list[Action]):
+        def q_rec(state:State, action:Action, n:int, simulated_actions: list[Action]) -> float:
+            """_summary_
+
+            Args:
+                state (State): _description_
+                action (Action): _description_
+                n (int): _description_
+                simulated_actions (list[Action]): _description_
+
+            Returns:
+                _type_: _description_
+            """
             assert len(state) > action.query
             node = state[action.query]
             assert isinstance(node, Normal)
@@ -293,22 +264,17 @@ class JAS_voc_policy(JAS_policy):
             tau_new = tau_old + tau
             sigma_new = 1 / np.sqrt(tau_new)
 
-            probs = []
-            for obs in range(min_obs, max_obs+1):
-                if obs == min_obs:
-                    probs.append(norm.cdf((obs+0.5)*node_scale, value, np.sqrt(sigma**2+sample_sigma**2)))
-                elif obs == max_obs:
-                    probs.append(1 - norm.cdf((obs-0.5)*node_scale, value, np.sqrt(sigma**2+sample_sigma**2)))
-                else:
-                    probs.append(norm.cdf((obs+0.5)*node_scale, value, np.sqrt(sigma**2+sample_sigma**2)) - norm.cdf((obs-0.5)*node_scale, value, np.sqrt(sigma**2+sample_sigma**2)))
-            
+            cdf_points = np.array([0] + [norm.cdf((obs)*node_scale, value, np.sqrt(sigma**2+sample_sigma**2)) for obs in eval_points] + [1])
+            probs = cdf_points[1:] - cdf_points[:-1]
+
             q_val = 0
             for p, v in zip(probs, range(min_obs, max_obs+1)):
                 if p>eps:
                     # Update distribution of observed node
                     mean_new = ((value * tau_old) + tau * v * node_scale) / tau_new
                     next_state = list(state)
-                    next_state[action.query] = Normal(mean_new, sigma_new)
+                    # Undo scaling
+                    next_state[action.query] = Normal(mean_new/node_scale, sigma_new/node_scale)
                     q_val += (v_rec(tuple(next_state), n-1, tuple(simulated_actions)) * p)
             return q_val + env.cost(action)
         
@@ -321,6 +287,7 @@ class JAS_voc_policy(JAS_policy):
         else:
             assert type(env.config.discretize_observations) is tuple
             min_obs, max_obs = env.config.discretize_observations
+            eval_points = [obs+0.5 for obs in range(min_obs, max_obs)]
             simulated_actions: list[Action] = [action]
             return q_rec(state, action, depth, simulated_actions) - env.cost(action) - current_term_reward
 
