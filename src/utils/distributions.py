@@ -202,11 +202,11 @@ class Categorical(Distribution):
             i = np.random.choice(len(self.vals), p=self.probs)
             return vals[i]
     
-    @lru_cache(LARGE_CACHE_SIZE)
-    def var(self):
-        exp = self.expectation()
-        var = sum([(val-exp)*(val-exp)*prob for val, prob in zip(self.vals, self.probs)])
-        return var
+    # @lru_cache(LARGE_CACHE_SIZE)
+    # def var(self):
+    #     exp = self.expectation()
+    #     var = sum([(val-exp)*(val-exp)*prob for val, prob in zip(self.vals, self.probs)])
+    #     return var
 
 class PointMass(Categorical):
     """A distribution with all mass on one value."""

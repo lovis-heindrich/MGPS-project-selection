@@ -1,3 +1,7 @@
+""" 
+Test cases for the myopic VOC policy.
+"""
+
 import unittest
 from src.policy.jas_voc_policy import JAS_voc_policy
 from src.utils.mouselab_jas import MouselabJas
@@ -68,7 +72,8 @@ class TestSimulationVOC(unittest.TestCase):
             num_criterias=1,
             expert_costs=[0.01, 0.01],
             expert_taus = [0.001, 0.001],
-            init=(Normal(0, 1), Normal(0, 20), Normal(0, 10))
+            init=(Normal(0, 1), Normal(0, 20), Normal(0, 10)),
+            term_belief=False
         )
         self.env = MouselabJas(config)
         self.policy = JAS_voc_policy()
