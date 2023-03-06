@@ -241,13 +241,7 @@ class MouselabJas:
         """
         returns = np.array(
             [
-                sum(
-                    [
-                        self.ground_truth[node] * self.criteria_scale[node]
-                        for node in path
-                    ]
-                )
-                for path in self.optimal_paths(state)
+                self.path_value(list(path)) for path in self.optimal_paths(state)
             ]
         )
 
@@ -271,6 +265,22 @@ class MouselabJas:
             return self.expected_path_value(list(path), state)
         assert False, "Should never happen"
         return 0.0
+    
+    def path_value(self, path: list[int]) -> float:
+        """Return the summed values of all nodes on a given path.
+
+        Args:
+            path (list[int]): List of nodes visited.
+            state (State): State
+
+        Returns:
+            float: Value of visiting all nodes on the path
+        """
+        return sum([
+                self.ground_truth[node] * self.criteria_scale[node]
+                for node in path
+            ])
+        
 
     def expected_path_value(self, path: list[int], state: State) -> float:
         """Return the summed expected values of all nodes on a given path.

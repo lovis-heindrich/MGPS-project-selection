@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 .vscode/
 debug.py
+dataclips*
 
 # C extensions
 *.so

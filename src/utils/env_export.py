@@ -24,7 +24,7 @@ def create_json(path: str, config: MouselabConfig, seeds: list[int]) -> None:
         "num_experts": len(config.expert_costs),
         "num_projects": config.num_projects,
         "num_criteria": config.num_criterias,
-        "criteria_scake": config.criteria_scale
+        "criteria_scale": config.criteria_scale
     }
     # Check init has been successfully converted
     assert all([type(state)==Normal for state in config.init[1:]])
