@@ -146,7 +146,7 @@ class MouselabJas:
         assert simulated_actions is not None
         click_counts = self.clicks + simulated_actions
         state = self.get_state(state)
-        if not self.config.max_actions or len(self.clicks) < self.config.max_actions:
+        if (not self.config.max_actions) or (len(self.clicks) < self.config.max_actions):
             for i, v in enumerate(state):
                 for e in range(self.num_experts):
                     if hasattr(v, "sample"):
