@@ -34,6 +34,26 @@ class JAS_voc_policy(JAS_policy):
         best_action_indices = np.argwhere(voc == np.max(voc)).flatten()
         chosen_action_index = np.random.choice(best_action_indices)
         return actions[chosen_action_index]
+    
+    def get_best_actions(self, env: MouselabJas, state: State| None = None, eps: float = 1e-6) -> list[Action]:
+        """ Determines the next action based on the myopic VOC calculation.
+
+        Args:
+            env (MouselabJas): Environment
+
+        Returns:
+            Action: Action with the highest myopic VOC
+        """
+        if state == None:
+            state = env.state
+        assert state is not None
+        actions = tuple(env.actions())
+        values = [self.myopic_voc_normal(env, action) for action in actions]
+        costs = [env.cost(action) for action in actions]
+        voc = [(1-self.cost_weight)*value + self.cost_weight*cost for value, cost in zip(values, costs)]
+        # Choose randomly between actions with the same voc
+        best_actions = np.argwhere(np.isclose(voc, np.max(voc))).flatten()
+        return [actions[i] for i in best_actions]
 
     def get_best_path_action_set(self, env: MouselabJas, action: Action, state: State) -> tuple[float, float]:
         """ Expected reward of the best path including and excluding the given action.

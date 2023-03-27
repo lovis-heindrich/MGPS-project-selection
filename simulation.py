@@ -6,7 +6,7 @@ import time
 import numpy as np
 from tqdm import tqdm
 
-def run_episode(env: MouselabJas, policy: JAS_policy, seed: int | None = None) -> EpisodeResult:
+def run_episode(env: MouselabJas, policy: JAS_policy, seed: int | None = None) -> tuple[EpisodeResult, list[Action]]:
     """ Run a single episode using the supplied policy and environment.
 
     Args:
@@ -25,14 +25,17 @@ def run_episode(env: MouselabJas, policy: JAS_policy, seed: int | None = None) -
     while not env.done:
         action = policy.act(env)
         #print(action)
-        _, reward, _, _ = env.step(action)
+        _, reward, _, obs = env.step(action)
         episode_reward += reward
-        episode_actions.append(action)
+        if action!=env.term_action:
+            episode_actions.append(action)
         cost += env.cost(action)
+        print(action, obs)
     expected_reward = env.expected_term_reward(env.state) + cost
     true_reward = np.mean(np.array([sum([env.ground_truth[node]*env.criteria_scale[node] for node in path]) for path in env.optimal_paths(env.state)])) + cost
     runtime = time.process_time() - start_time
-    return EpisodeResult(reward=episode_reward, actions=len(episode_actions), seed=seed, runtime=runtime, true_reward=true_reward, expected_reward=expected_reward)
+    print(episode_actions)
+    return EpisodeResult(reward=episode_reward, actions=len(episode_actions), seed=seed, runtime=runtime, true_reward=true_reward, expected_reward=expected_reward), episode_actions
 
 def run_simulation(env: MouselabJas, policy: JAS_policy, n=1000, start_seed=None, use_tqdm=True) -> pd.DataFrame:
     """ Run simulations for a number of episodes and aggregate the results.
@@ -51,11 +54,13 @@ def run_simulation(env: MouselabJas, policy: JAS_policy, n=1000, start_seed=None
         start, end = start_seed, start_seed + n
     else:
         start, end = 0, n
+    all_actions = []
     for i in (tqdm(range(start, end)) if use_tqdm else range(start, end)):
         policy.reset()
         if start_seed is not None:
-            result = run_episode(env, policy, i)
+            result, actions = run_episode(env, policy, i)
         else:
-            result = run_episode(env, policy)
+            result, actions = run_episode(env, policy)
+        all_actions.append(actions)
         results.append(result)
-    return pd.DataFrame(results, columns=EpisodeResult._fields)
+    return pd.DataFrame(results, columns=EpisodeResult._fields), all_actions

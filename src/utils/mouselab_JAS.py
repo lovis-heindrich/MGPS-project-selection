@@ -354,8 +354,10 @@ class MouselabJas:
         dot = Digraph()
         for x, ys in enumerate(self.tree):
             r = self.state[x]
+            if type(r) != int:
+                r = r.mu
             clicks = [click.query for click in self.clicks]
-            observed = clicks.index(x) >= 0
+            observed = clicks.count(x) > 0
             if not observed:
                 l = str(x)
             elif type(r) == float:
