@@ -9,7 +9,7 @@ from src.utils.distributions import Normal
 from typing import cast, Any
 import json
 
-def create_json(path: str, config: MouselabConfig, seeds: list[int]) -> None:
+def create_json(path: str, config: MouselabConfig, seeds: list[int], cost_weight=0.5798921379230035) -> None:
     """ Creates a json file containing the environment structure and a number of pregenerated environment instances.
 
     Args:
@@ -25,7 +25,8 @@ def create_json(path: str, config: MouselabConfig, seeds: list[int]) -> None:
         "num_projects": config.num_projects,
         "num_criteria": config.num_criterias,
         "criteria_scale": config.criteria_scale,
-        "max_actions": config.max_actions
+        "max_actions": config.max_actions,
+        "cost_weight": cost_weight
     }
     # Check init has been successfully converted
     assert all([type(state)==Normal for state in config.init[1:]])
