@@ -4,6 +4,8 @@ Utility functions for working with probabilities.
 
 import numpy as np
 from src.utils.distributions import Normal
+from src.utils.data_classes import Action
+# from src.utils.mouselab_jas import MouselabJas
 
 def tau_to_sigma(tau: np.ndarray) -> np.ndarray:
     """ Converts the precision of a Normal distribution to its standard deviation.
@@ -16,7 +18,7 @@ def tau_to_sigma(tau: np.ndarray) -> np.ndarray:
     """
     return np.sqrt(1/tau)
 
-def sigma_to_tau(sigma: np.ndarray) -> np.ndarray:
+def sigma_to_tau(sigma: list[float]) -> list[float]:
     """ Converts the precision of a Normal distribution to its standard deviation.
 
     Args:
@@ -25,7 +27,7 @@ def sigma_to_tau(sigma: np.ndarray) -> np.ndarray:
     Returns:
         np.array: Sigma values
     """
-    return 1/np.square(sigma)
+    return [1/(x**2) for x in sigma] #1/np.square(sigma)
 
 def ci(mu: float, sigma: float, z=1.959963984540054) -> tuple[float, float]:
     """ Computes the confidence interval of a Normal distribution.

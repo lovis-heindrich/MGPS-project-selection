@@ -107,6 +107,21 @@ class MouselabJas:
                 self.expert_truths[self.expert_truths > max_obs] = max_obs
         return self.state
 
+    def action_to_readable(self, action: Action) -> tuple[int, int, int]:
+        """ Converts an action object to a [project, criteria, expert] tuple.
+
+        Args:
+            action (Action): Input Action object
+
+        Returns:
+            tuple[int, int, int]: Tuple of [project, criteria, expert]
+        """
+        expert = action.expert
+        criteria = (action.query - 1) % self.config.num_criterias
+        project = (action.query - 1) // self.config.num_criterias
+        #print(f"Project {project}, Criteria {criteria}, Expert {expert}")
+        return project, criteria, expert
+
     def cost(self, action: Action) -> float:
         """Returns the cost of the given action.
 

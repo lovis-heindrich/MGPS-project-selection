@@ -26,14 +26,18 @@ class JAS_voc_policy(JAS_policy):
         Returns:
             Action: Action with the highest myopic VOC
         """
-        actions = tuple(env.actions())
-        values = [self.myopic_voc_normal(env, action) for action in actions]
-        costs = [env.cost(action) for action in actions]
-        voc = [(1-self.cost_weight)*value + self.cost_weight*cost for value, cost in zip(values, costs)]
+        actions, voc = self.get_all_vocs(env)
         # Choose randomly between actions with the same voc
         best_action_indices = np.argwhere(voc == np.max(voc)).flatten()
         chosen_action_index = np.random.choice(best_action_indices)
         return actions[chosen_action_index]
+    
+    def get_all_vocs(self, env: MouselabJas):
+        actions = tuple(env.actions())
+        values = [self.myopic_voc_normal(env, action) for action in actions]
+        costs = [env.cost(action) for action in actions]
+        voc = [(1-self.cost_weight)*value + self.cost_weight*cost for value, cost in zip(values, costs)]
+        return actions, voc
     
     def get_best_actions(self, env: MouselabJas, state: State| None = None, eps: float = 1e-6) -> list[Action]:
         """ Determines the next action based on the myopic VOC calculation.

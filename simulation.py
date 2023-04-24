@@ -30,11 +30,11 @@ def run_episode(env: MouselabJas, policy: JAS_policy, seed: int | None = None) -
         if action!=env.term_action:
             episode_actions.append(action)
         cost += env.cost(action)
-        print(action, obs)
+        #print(action, obs)
     expected_reward = env.expected_term_reward(env.state) + cost
     true_reward = np.mean(np.array([sum([env.ground_truth[node]*env.criteria_scale[node] for node in path]) for path in env.optimal_paths(env.state)])) + cost
     runtime = time.process_time() - start_time
-    print(episode_actions)
+    #print(episode_actions)
     return EpisodeResult(reward=episode_reward, actions=len(episode_actions), seed=seed, runtime=runtime, true_reward=true_reward, expected_reward=expected_reward), episode_actions
 
 def run_simulation(env: MouselabJas, policy: JAS_policy, n=1000, start_seed=None, use_tqdm=True) -> pd.DataFrame:
