@@ -161,7 +161,7 @@ class MouselabJas:
         assert simulated_actions is not None
         click_counts = self.clicks + simulated_actions
         state = self.get_state(state)
-        if (not self.config.max_actions) or (len(self.clicks) < self.config.max_actions):
+        if (not self.config.max_actions) or (len(click_counts) < self.config.max_actions):
             for i, v in enumerate(state):
                 for e in range(self.num_experts):
                     if hasattr(v, "sample"):
@@ -205,6 +205,74 @@ class MouselabJas:
         reward = self.cost(action)
         done = False
         return self.state, reward, done, obs
+    
+    def simulate(self, action: Action, state: State, clicks: list[Action]) -> tuple[State, float, bool, float]:
+        """ Simulates an action and returns the resulting state without updating internal environment variables.
+
+        Args:
+            action (Action): Action to be taken.
+
+        Returns:
+            tuple[State, float, bool, float]: New state, reward, done, observation
+        """
+        assert not self.done, "terminal state"
+        
+        if action == self.term_action:
+            #self.done = True
+            reward = self.term_reward(state)
+            done = True
+            obs = 0.0
+            return state, reward, done, obs
+        # Assert that legal action is taken
+        if self.config.max_actions != None:
+            assert type(self.config.max_actions) == int
+            assert len(self.clicks) + len(clicks) < self.config.max_actions, "max actions reached"
+        if self.config.limit_repeat_clicks is not None:
+            assert type(self.config.limit_repeat_clicks) == int
+            assert (
+                clicks.count(action) < self.config.limit_repeat_clicks
+            ), "max repeat clicks reached"
+            assert (
+                self.clicks.count(action) < self.config.limit_repeat_clicks
+            ), "max repeat clicks reached"
+        assert hasattr(self.state[action.query], "sample"), "state already observed"
+        # Observe a new node
+        state, obs = self.simulate_observe(action, state)
+        reward = self.cost(action)
+        done = False
+        return state, reward, done, obs
+
+    def simulate_observe(self, action: Action, state: State) -> tuple[State, float]:
+        """ Simulates observing a state in a partially observable environment by sampling a random observation and updating the Normal distribution with the new observation
+
+        Args:
+            action (int): The action performed
+
+        Returns:
+            Tuple: Updated state after observation
+        """
+        node_state = state[action.query]
+        assert isinstance(
+            node_state, Normal
+        ), "only Normal distributions are supported as of now"
+        tau_old = 1 / (node_state.sigma**2)
+        # Simulate ground truth
+        sim_ground_truth = sample(self.init[action.query])
+        # Simulate expert guess
+        sim_expert_guess = sample(Normal(sim_ground_truth, self.expert_sigma[action.expert]))
+        if self.config.discretize_observations is not None:
+            min_obs, max_obs = self.config.discretize_observations
+            sim_expert_guess = np.rint(sim_expert_guess)
+            sim_expert_guess = min(max_obs, max(min_obs, sim_expert_guess))
+        obs = sim_expert_guess
+        tau_new = tau_old + self.expert_taus[action.expert]
+        mean_new = (
+            (node_state.mu * tau_old) + self.expert_taus[action.expert] * obs
+        ) / tau_new
+        sigma_new = 1 / np.sqrt(tau_new)
+        s = list(state)
+        s[action.query] = Normal(mean_new, sigma_new)
+        return tuple(s), obs
 
     def observe(self, action: Action) -> tuple[State, float]:
         """Observes a state in a partially observable environment by updating the Normal distribution with the new observation

@@ -3,7 +3,7 @@ from src.utils.mouselab_jas import MouselabJas
 from src.utils.data_classes import MouselabConfig
 from src.utils.utils import sigma_to_tau
 
-def get_env(num_projects=5) -> tuple[MouselabJas, MouselabConfig]:
+def get_env(num_projects=5, term_belief=True) -> tuple[MouselabJas, MouselabConfig]:
     # Fixed from paper
     num_criteria = 6
     weights = [0.0206795, 0.0672084, 0.2227102, 0.1067428, 0.4665054, 0.1161537]
@@ -16,6 +16,6 @@ def get_env(num_projects=5) -> tuple[MouselabJas, MouselabConfig]:
     init = tuple(create_init([0]+(mu*num_projects), [0]+(sigma*num_projects)))
     expert_costs = [0.002]*6
 
-    config = MouselabConfig(num_projects, num_criteria, expert_costs, expert_taus, init, criteria_scale=weights, term_belief=True, max_actions=5)
+    config = MouselabConfig(num_projects, num_criteria, expert_costs, expert_taus, init, criteria_scale=weights, term_belief=term_belief, max_actions=5)
     env = MouselabJas(config=config)
     return env, config

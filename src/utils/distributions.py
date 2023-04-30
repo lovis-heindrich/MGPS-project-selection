@@ -6,7 +6,7 @@ Source: https://github.com/RationalityEnhancementGroup/mouselab-mdp-tools/blob/m
 import numpy as np
 from collections import Counter
 import itertools as it
-from toolz import reduce
+#from toolz import reduce
 import scipy.stats
 from functools import total_ordering, partial, lru_cache
 
@@ -328,25 +328,25 @@ def sample(val):
 
 #     return Categorical(outcomes.keys(), outcomes.values())
 
-def cross(dists, f=None):
-    if f is None:
-        f = lambda *x: x
-    outcomes = Counter()
-    for outcome_probs in it.product(*dists):
-        o, p = zip(*outcome_probs)
-        outcomes[f(*o)] += reduce(lambda x, y: x*y, p)
+# def cross(dists, f=None):
+#     if f is None:
+#         f = lambda *x: x
+#     outcomes = Counter()
+#     for outcome_probs in it.product(*dists):
+#         o, p = zip(*outcome_probs)
+#         outcomes[f(*o)] += reduce(lambda x, y: x*y, p)
 
-    return Categorical(outcomes.keys(), outcomes.values())
+#     return Categorical(outcomes.keys(), outcomes.values())
 
-def cross_1(dists, f=None):
-    if f is None:
-        f = lambda *x: x
-    outcomes = Counter()
-    for outcome_probs in it.product(*dists):
-        o, p = zip(*outcome_probs)
-        outcomes[f(o)] += reduce(lambda x, y: x*y, p)
+# def cross_1(dists, f=None):
+#     if f is None:
+#         f = lambda *x: x
+#     outcomes = Counter()
+#     for outcome_probs in it.product(*dists):
+#         o, p = zip(*outcome_probs)
+#         outcomes[f(o)] += reduce(lambda x, y: x*y, p)
 
-    return Categorical(outcomes.keys(), outcomes.values())
+#     return Categorical(outcomes.keys(), outcomes.values())
 
 __no_default__ = 25
 
@@ -364,40 +364,40 @@ def cmax(dists, default=__no_default__):
         return cross(dists, max)
 
 
-# @lru_cache(maxsize=None)
-def dmax(dists, default=__no_default__):
-    assert 0 
-    dists = tuple(dists)
-    if len(dists) == 1:
-        return dists[0]
-    if len(dists) == 0:
-        if default is not __no_default__:
-            return default
-        else:
-            raise ValueError('dmax() arg is an empty sequence')
+# # @lru_cache(maxsize=None)
+# def dmax(dists, default=__no_default__):
+#     assert 0 
+#     dists = tuple(dists)
+#     if len(dists) == 1:
+#         return dists[0]
+#     if len(dists) == 0:
+#         if default is not __no_default__:
+#             return default
+#         else:
+#             raise ValueError('dmax() arg is an empty sequence')
 
-    def sample(n=None):
-        return reduce(np.maximum, [d.sample(n) for d in dists])
+#     def sample(n=None):
+#         return reduce(np.maximum, [d.sample(n) for d in dists])
 
-    return GenerativeModel(sample, kind='dmax', args=dists)
+#     return GenerativeModel(sample, kind='dmax', args=dists)
 
-# @lru_cache(CACHE_SIZE)
-def smax(dists, default=__no_default__):
-    if len(dists) == 0:
-        if default is not __no_default__:
-            return default
-        else:
-            raise ValueError('dmax() arg is an empty sequence')
-    elif len(dists) == 1:
-        return dists[0]
-    elif len(dists) == 2:
-        a, b = dists[0]._samples, dists[1]._samples
-        if a[0] == b[0]:  # the same samples
-            b = np.random.permutation(b)
-        return SampleDist(np.maximum(a, b))
-    else:
-        raise NotImplementedError()
-        return SampleDist(reduce(np.maximum, [d._samples for d in dists]))
+# # @lru_cache(CACHE_SIZE)
+# def smax(dists, default=__no_default__):
+#     if len(dists) == 0:
+#         if default is not __no_default__:
+#             return default
+#         else:
+#             raise ValueError('dmax() arg is an empty sequence')
+#     elif len(dists) == 1:
+#         return dists[0]
+#     elif len(dists) == 2:
+#         a, b = dists[0]._samples, dists[1]._samples
+#         if a[0] == b[0]:  # the same samples
+#             b = np.random.permutation(b)
+#         return SampleDist(np.maximum(a, b))
+#     else:
+#         raise NotImplementedError()
+#         return SampleDist(reduce(np.maximum, [d._samples for d in dists]))
 
 
 def normal_approximation(dist, samples=10000):
