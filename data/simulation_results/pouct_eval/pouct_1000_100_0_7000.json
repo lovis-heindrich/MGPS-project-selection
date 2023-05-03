@@ -1,0 +1,1 @@
+{"true_reward": 3.8947926126617527, "expected_reward": 3.683532083116489, "runtime": 2.462171541939998, "actions": 5.0, "seed": 7499.5, "steps": 1000, "exploration_coeff": 10.0, "rollout_depth": 0}

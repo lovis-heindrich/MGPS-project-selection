@@ -56,7 +56,7 @@ class JAS_voc_policy(JAS_policy):
         costs = [env.cost(action) for action in actions]
         voc = [(1-self.cost_weight)*value + self.cost_weight*cost for value, cost in zip(values, costs)]
         # Choose randomly between actions with the same voc
-        best_actions = np.argwhere(np.isclose(voc, np.max(voc))).flatten()
+        best_actions = np.argwhere(np.isclose(voc, np.max(voc), atol=eps)).flatten()
         return [actions[i] for i in best_actions]
 
     def get_best_path_action_set(self, env: MouselabJas, action: Action, state: State) -> tuple[float, float]:

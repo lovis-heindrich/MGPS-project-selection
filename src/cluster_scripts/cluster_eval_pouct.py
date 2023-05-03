@@ -12,9 +12,8 @@ if __name__ == "__main__":
     
     #n_eval, steps, rollout_depth, exploration_coeff, seed
     
-    n_eval = 2#1000
-    for start_seed in [0, 2]: 
-    #for start_seed in [5000, 6000, 7000, 8000, 9000]:
+    n_eval = 1000
+    for start_seed in [5000, 6000, 7000, 8000, 9000]:
         call_args = [n_eval, 10, 0, 0.5, start_seed]
         print("Submitting", call_args, len(call_args))
         sub_file = create_sub_file(script, call_args, num_runs=1, num_cpus=1, req_mem = 8192, outputs = True, errs = True)

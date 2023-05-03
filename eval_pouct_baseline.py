@@ -37,11 +37,11 @@ if __name__ == "__main__":
         "rollout_depth": args.rollout_depth
     }
 
-    with open(f"./data/simulation_results/pouct_eval/pouct_{args.steps}_{int(args.exploration_coeff*10)}_{args.rollout_depth}_{args.seed}.json", 'w') as out_f:
+    with open(f"./data/pouct_eval/pouct_{args.steps}_{int(args.exploration_coeff*10)}_{args.rollout_depth}_{args.seed}.json", 'w') as out_f:
         json.dump(optimization_res, out_f)
 
     res["steps"] = args.steps
     res["exploration_coeff"] = args.exploration_coeff
     res["rollout_depth"] = args.rollout_depth
 
-    res.to_csv(f"./data/simulation_results/pouct_eval/pouct_{args.steps}_{int(args.exploration_coeff*10)}_{args.rollout_depth}_{args.seed}.csv")
+    res.to_csv(f"./data/pouct_eval/pouct_{args.steps}_{int(args.exploration_coeff*10)}_{args.rollout_depth}_{args.seed}.csv")
