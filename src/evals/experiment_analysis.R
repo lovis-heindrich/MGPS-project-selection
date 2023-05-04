@@ -1,7 +1,7 @@
 library(nparLD)
 
 # Read data
-dat = read.csv("C:/Users/lheindrich/Documents/jas-mdp/data/experiment_results/exp_4.csv")
+dat = read.csv("C:/Users/lheindrich/Documents/jas-mdp/data/experiment_results/exp_5.csv")
 df <- dat[,c("Participant", "Condition", "TrialId", "ExpectedScore", "Score", "ClickAgreement")]
 
 df$Participant <- as.factor(df$Participant)
@@ -9,8 +9,8 @@ df$TrialId <- as.factor(df$TrialId)
 
 runAnova <- function(df){
   # This one doesn't work for some conditions
-  # y <- df$ExpectedScore
-  y <- df$ClickAgreement
+  y <- df$ExpectedScore
+  # y <- df$ClickAgreement
   time <- df$TrialId
   group <- df$Condition
   subject <- df$Participant
