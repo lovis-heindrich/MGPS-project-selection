@@ -33,6 +33,10 @@ class JAS_policy(ABC):
 class RandomPolicy(JAS_policy):
     """Policy that takes random actions."""
 
+    def __init__(self) -> None:
+        super().__init__()
+        self.rng = np.random.default_rng(12345)
+
     def act(self, env: MouselabJas) -> Action:
         """Act randomly, including randomly terminating.
 
@@ -43,7 +47,7 @@ class RandomPolicy(JAS_policy):
             Action: Action taken by the policy.
         """
         actions = tuple(env.actions())
-        return actions[np.random.choice(len(actions))]
+        return actions[self.rng.choice(len(actions))]
 
 
 class ExhaustivePolicy(JAS_policy):
