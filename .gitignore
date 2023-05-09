@@ -5,6 +5,7 @@ __pycache__/
 .vscode/
 debug.py
 dataclips*
+*random_baseline_all.csv
 
 # C extensions
 *.so
