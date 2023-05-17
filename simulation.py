@@ -6,7 +6,7 @@ import time
 import numpy as np
 from tqdm import tqdm
 
-def run_episode(env: MouselabJas, policy: JAS_policy, seed: int | None = None) -> tuple[EpisodeResult, list[Action]]:
+def run_episode(env: MouselabJas, policy: JAS_policy, seed: int | None = None, return_obs=False) -> tuple[EpisodeResult, list[Action]] | tuple[EpisodeResult, list[Action], list[float]]:
     """ Run a single episode using the supplied policy and environment.
 
     Args:
@@ -20,6 +20,7 @@ def run_episode(env: MouselabJas, policy: JAS_policy, seed: int | None = None) -
     env.reset(seed)
     episode_reward = 0.
     episode_actions: list[Action] = []
+    episode_obs = []
     start_time = time.process_time()
     cost = 0.
     while not env.done:
@@ -29,12 +30,15 @@ def run_episode(env: MouselabJas, policy: JAS_policy, seed: int | None = None) -
         episode_reward += reward
         if action!=env.term_action:
             episode_actions.append(action)
+            episode_obs.append(obs)
         cost += env.cost(action)
         #print(action, obs)
     expected_reward = env.expected_term_reward(env.state) + cost
     true_reward = np.mean(np.array([sum([env.ground_truth[node]*env.criteria_scale[node] for node in path]) for path in env.optimal_paths(env.state)])) + cost
     runtime = time.process_time() - start_time
     #print(episode_actions)
+    if return_obs:
+        return EpisodeResult(reward=episode_reward, actions=len(episode_actions), seed=seed, runtime=runtime, true_reward=true_reward, expected_reward=expected_reward), episode_actions, episode_obs
     return EpisodeResult(reward=episode_reward, actions=len(episode_actions), seed=seed, runtime=runtime, true_reward=true_reward, expected_reward=expected_reward), episode_actions
 
 def run_simulation(env: MouselabJas, policy: JAS_policy, n=1000, start_seed=None, use_tqdm=True) -> pd.DataFrame:

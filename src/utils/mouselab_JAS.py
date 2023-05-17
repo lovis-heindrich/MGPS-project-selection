@@ -420,7 +420,7 @@ class MouselabJas:
 
         return list(rec([start]))
 
-    def _render(self) -> Any:
+    def _render(self, revealed=False) -> Any:
         """Creates a graph diagram of the environment structure. Import is handled in the function as the library has complicated installation requirements.
 
         Returns:
@@ -437,11 +437,15 @@ class MouselabJas:
         dot = Digraph()
         for x, ys in enumerate(self.tree):
             r = self.state[x]
+            truth = self.ground_truth[x]
             if type(r) != int:
+                assert type(r) == Normal
                 r = r.mu
             clicks = [click.query for click in self.clicks]
-            observed = clicks.count(x) > 0
-            if not observed:
+            observed = (clicks.count(x) > 0)
+            if revealed:
+                l = str(np.round(truth, 2))
+            elif not observed:
                 l = str(x)
             elif type(r) == float:
                 l = str(round(r, 2))
