@@ -1,7 +1,7 @@
 library(nparLD)
 
 # Read data
-dat = read.csv("C:/Users/lheindrich/Documents/jas-mdp/data/experiment_results/exp_5.csv")
+dat = read.csv("./data/experiment_results/exp_5.csv")
 df <- dat[,c("Participant", "Condition", "TrialId", "ExpectedScore", "Score", "ClickAgreement")]
 
 df$Participant <- as.factor(df$Participant)

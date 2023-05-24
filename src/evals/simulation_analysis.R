@@ -1,7 +1,7 @@
 library(emmeans)
 
 # Read data
-df = read.csv("C:/Users/lheindrich/Documents/jas-mdp/data/simulation_results/simulation_data.csv")
+df = read.csv("./data/simulation_results/simulation_data.csv")
 df$Name <- as.factor(df$type)
 
 # ANOVA model
