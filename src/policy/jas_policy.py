@@ -3,7 +3,7 @@ Contains the policy base class and some basic baseline policies.
 """
 
 from src.utils.data_classes import Action
-from src.utils.mouselab_jas import MouselabJas
+from src.utils.mouselab_JAS import MouselabJas
 import numpy as np
 from abc import ABC, abstractmethod
 

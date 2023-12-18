@@ -1,5 +1,5 @@
 from src.utils.env_creation import create_init
-from src.utils.mouselab_jas import MouselabJas
+from src.utils.mouselab_JAS import MouselabJas
 from src.utils.data_classes import MouselabConfig
 from src.utils.utils import sigma_to_tau
 

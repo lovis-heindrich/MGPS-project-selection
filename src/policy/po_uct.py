@@ -4,7 +4,7 @@ The MCTS implementation is loosely based on a tutorial created by Tor Lattimore.
 """
 
 from src.policy.jas_policy import JAS_policy
-from src.utils.mouselab_jas import MouselabJas
+from src.utils.mouselab_JAS import MouselabJas
 from src.utils.data_classes import Action
 import random
 import numpy as np

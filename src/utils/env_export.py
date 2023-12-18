@@ -2,7 +2,7 @@
 Tools for exporting environments for use in online experiments.
 """
 
-from src.utils.mouselab_jas import MouselabJas
+from src.utils.mouselab_JAS import MouselabJas
 from src.utils.data_classes import MouselabConfig
 from src.utils.distributions import Normal
 
