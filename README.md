@@ -1,4 +1,4 @@
-# jas-mdp
+# Project Selection metareasoning model
 
 ## Code structure
 
